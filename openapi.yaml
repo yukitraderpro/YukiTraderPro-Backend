@@ -1,0 +1,556 @@
+openapi: 3.0.3
+info:
+  title: Yuki Trader Pro — API Backend V3
+  version: "3.0.0"
+  description: >
+    API REST du backend Yuki Trader Pro (authentification JWT, synchronisation
+    cloud multi-appareils, validation Google Play Billing, notifications push
+    FCM, supervision). Le moteur d'analyse (SMC, indicateurs techniques,
+    pondération dynamique) n'est PAS exposé par cette API : il reste
+    entièrement côté client (voir /analysis.js), conformément au principe
+    fondamental du cahier des charges V3 ("le moteur d'analyse V2 reste
+    inchangé").
+servers:
+  - url: http://localhost:4000/api
+    description: Développement local
+
+tags:
+  - name: Auth
+  - name: Sync
+  - name: Billing
+  - name: Notifications
+  - name: CSV
+  - name: Admin
+  - name: Monitoring
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Créer un compte et ouvrir une session (essai gratuit 7 jours)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                deviceId: { type: string }
+                deviceLabel: { type: string }
+                platform: { type: string, example: android }
+      responses:
+        "201":
+          description: Compte créé
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "400": { description: Requête invalide }
+        "409": { description: E-mail déjà utilisé }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Se connecter (multi-appareils — chaque appareil obtient son propre refresh token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                deviceId: { type: string }
+                deviceLabel: { type: string }
+                platform: { type: string }
+      responses:
+        "200":
+          description: Connexion réussie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "401": { description: E-mail ou mot de passe incorrect }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Échanger un refresh token contre un nouveau couple access/refresh (rotation)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+                deviceId: { type: string }
+      responses:
+        "200":
+          description: Nouveau couple de tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResult" }
+        "401": { description: Refresh token invalide, expiré ou déjà utilisé }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Révoquer un refresh token (déconnexion de cet appareil)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200": { description: Déconnecté }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Profil de l'utilisateur connecté, statut d'essai/abonnement, appareils connus
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Profil utilisateur
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResult" }
+        "401": { description: Authentification requise }
+
+  /sync/state:
+    get:
+      tags: [Sync]
+      summary: Récupérer l'état applicatif synchronisé (journal, positions, signaux, préférences…)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: État courant (peut être `null` si jamais synchronisé)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SyncStateResult" }
+    put:
+      tags: [Sync]
+      summary: Enregistrer l'état applicatif courant (dernier écrit gagne, version incrémentale)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: object, description: "Objet opaque — même format que le `state` local du client V2, non interprété par le serveur" }
+      responses:
+        "200": { description: Enregistré }
+        "413": { description: État trop volumineux }
+
+  /sync/devices:
+    get:
+      tags: [Sync]
+      summary: Lister les appareils connus de l'utilisateur
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Liste des appareils }
+
+  /sync/devices/{id}:
+    delete:
+      tags: [Sync]
+      summary: Déconnecter un appareil (révoque ses refresh tokens)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Appareil déconnecté }
+        "404": { description: Appareil introuvable }
+
+  /billing/offers:
+    get:
+      tags: [Billing]
+      summary: >
+        Offres d'abonnement actuellement en vigueur (addendum V3.1). Aucun
+        tarif n'est codé en dur côté client : cet endpoint public est la
+        seule source de vérité pour les prix affichés.
+      responses:
+        "200":
+          description: Liste des offres actives avec places restantes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Offer" }
+
+  /billing/my-offer:
+    get:
+      tags: [Billing]
+      summary: Offre actuellement assignée à l'utilisateur connecté (tarif verrouillé), ou null
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Offre courante ou null }
+
+  /billing/verify-purchase:
+    post:
+      tags: [Billing]
+      summary: >
+        Vérifier un achat/abonnement Google Play côté serveur (Play Developer API).
+        À appeler par l'app Android (TWA) après un achat via la Billing Library —
+        voir README_BACKEND.md, une PWA seule ne peut pas déclencher cet achat.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purchaseToken, subscriptionId]
+              properties:
+                purchaseToken: { type: string }
+                subscriptionId: { type: string, example: yuki_pro_monthly }
+      responses:
+        "200":
+          description: Statut vérifié auprès de Google
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionStatus" }
+        "502": { description: Google Play injoignable }
+
+  /billing/status:
+    get:
+      tags: [Billing]
+      summary: Dernier statut d'abonnement connu pour l'utilisateur
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Statut d'abonnement }
+
+  /notifications/register-token:
+    post:
+      tags: [Notifications]
+      summary: Enregistrer un token FCM (permet les notifications même application fermée)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fcmToken]
+              properties:
+                fcmToken: { type: string }
+                deviceId: { type: string }
+      responses:
+        "200": { description: Token enregistré }
+
+  /notifications/token/{token}:
+    delete:
+      tags: [Notifications]
+      summary: Désinscrire un token FCM
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Token supprimé }
+
+  /notifications/send-test:
+    post:
+      tags: [Notifications]
+      summary: Envoyer une notification de test à tous les appareils de l'utilisateur
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Résultat de l'envoi par appareil }
+        "404": { description: Aucun appareil enregistré }
+
+  /csv/imports:
+    post:
+      tags: [CSV]
+      summary: Créer un aperçu d'import (upload, validation, parsing, mapping suggéré) — addendum V3.2
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, source, destination, csvText]
+              properties:
+                filename: { type: string }
+                source: { type: string, enum: [tradingview, broker, portfolio, watchlist, custom] }
+                destination: { type: string, enum: [portfolio, positions, favorites, watchlist, journal, custom_db] }
+                csvText: { type: string }
+                mimeType: { type: string }
+      responses:
+        "201": { description: Aperçu créé (en-têtes, mapping suggéré, échantillon de lignes) }
+        "400": { description: Fichier invalide, trop volumineux, ou contenu suspect }
+    get:
+      tags: [CSV]
+      summary: Historique des imports de l'utilisateur connecté
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Liste des imports }
+
+  /csv/imports/{id}:
+    get:
+      tags: [CSV]
+      summary: Détail d'un import (mapping utilisé, rapport si confirmé)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Détail de l'import }
+        "404": { description: Import introuvable (ou appartenant à un autre utilisateur) }
+    delete:
+      tags: [CSV]
+      summary: >
+        Supprime un import — `scope=file_only` (garde les lignes déjà importées) ou
+        `scope=all` (défaut — corbeille avec délai de restauration configurable)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: scope
+          schema: { type: string, enum: [file_only, all] }
+      responses:
+        "200": { description: Suppression effectuée }
+
+  /csv/imports/{id}/confirm:
+    post:
+      tags: [CSV]
+      summary: Confirme l'import (normalisation, déduplication, écriture transactionnelle, rapport)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mapping: { type: object, description: "index de colonne -> champ Yuki" }
+                duplicateStrategy: { type: string, enum: [ignore, replace, merge, create_new] }
+      responses:
+        "200": { description: "Rapport d'import : lignes importées, ignorées, mises à jour, en erreur" }
+
+  /csv/imports/{id}/cancel:
+    post:
+      tags: [CSV]
+      summary: Annule un import encore en attente d'aperçu (jamais écrit en base)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Annulé }
+
+  /csv/imports/{id}/impact:
+    get:
+      tags: [CSV]
+      summary: Aperçu de l'impact avant suppression (nombre de lignes concernées)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: rowIds
+          schema: { type: string }
+          description: Liste d'identifiants de lignes séparés par des virgules (optionnel)
+      responses:
+        "200": { description: Impact estimé }
+
+  /csv/imports/{id}/rows/delete:
+    post:
+      tags: [CSV]
+      summary: Supprime une sélection de lignes importées sans toucher au reste de l'import
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rowIds]
+              properties:
+                rowIds: { type: array, items: { type: string } }
+      responses:
+        "200": { description: Lignes supprimées }
+
+  /csv/imports/{id}/restore:
+    post:
+      tags: [CSV]
+      summary: Restaure un import supprimé, dans la limite du délai de restauration
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Restauré }
+        "400": { description: Délai de restauration dépassé }
+
+  /csv/rows:
+    get:
+      tags: [CSV]
+      summary: Liste les lignes importées de l'utilisateur, avec filtres (source, marché, devise, ticker, etc.)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Lignes filtrées }
+
+  /csv/mapping/{source}:
+    get:
+      tags: [CSV]
+      summary: Mapping de colonnes mémorisé pour cette source (accélère les imports suivants)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: source, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Mapping mémorisé ou null }
+
+  /admin/offers:
+    get:
+      tags: [Admin]
+      summary: Lister toutes les offres (actives et inactives) — réservé aux administrateurs
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Liste complète des offres }
+        "403": { description: Accès administrateur requis }
+    post:
+      tags: [Admin]
+      summary: Créer une nouvelle offre/promotion sans publier une nouvelle version de l'application
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, priceCents]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                priceCents: { type: integer }
+                seatLimit: { type: integer, nullable: true, description: "null = illimité" }
+                active: { type: boolean }
+                sortOrder: { type: integer }
+      responses:
+        "201": { description: Offre créée }
+
+  /admin/offers/{id}:
+    put:
+      tags: [Admin]
+      summary: Modifier une offre existante (prix, activation, places, description)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Offre mise à jour }
+        "404": { description: Offre introuvable }
+
+  /admin/offers/{id}/price-history:
+    get:
+      tags: [Admin]
+      summary: Historique des modifications de prix d'une offre (addendum V3.3)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: "Historique : ancien prix, nouveau prix, auteur, date" }
+
+  /admin/subscribers:
+    get:
+      tags: [Admin]
+      summary: Suivi du nombre d'abonnés par offre
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Statistiques d'abonnement }
+
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: Liste des utilisateurs (200 plus récents)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Liste des utilisateurs }
+
+  /health:
+    get:
+      tags: [Monitoring]
+      summary: Vérification de disponibilité (liveness/readiness)
+      responses:
+        "200": { description: Service opérationnel }
+        "503": { description: Service dégradé (ex. base de données injoignable) }
+
+  /metrics:
+    get:
+      tags: [Monitoring]
+      summary: Compteurs internes (requêtes, erreurs, mémoire) pour supervision
+      responses:
+        "200": { description: Métriques }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [free, pro, admin] }
+        createdAt: { type: integer, format: int64 }
+        trialUntil: { type: integer, format: int64 }
+        subscribed: { type: boolean }
+    AuthResult:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        accessToken: { type: string, description: "JWT court (15 min par défaut)" }
+        refreshToken: { type: string, description: "JWT long (30 jours par défaut), à rotation à chaque usage" }
+        expiresIn: { type: integer, description: "Durée de vie de l'access token, en secondes" }
+    MeResult:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        isPro: { type: boolean }
+        isTrialActive: { type: boolean }
+        devices:
+          type: array
+          items: { type: object }
+    SyncStateResult:
+      type: object
+      properties:
+        state: { type: object, nullable: true }
+        updatedAt: { type: integer, format: int64, nullable: true }
+        version: { type: integer }
+    SubscriptionStatus:
+      type: object
+      properties:
+        status: { type: string, enum: [active, expired, cancelled, pending, invalid] }
+        expiryAt: { type: integer, format: int64, nullable: true }
+        autoRenewing: { type: boolean }
+    Offer:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        priceCents: { type: integer }
+        currency: { type: string, example: EUR }
+        seatLimit: { type: integer, nullable: true }
+        seatsUsed: { type: integer }
+        seatsRemaining: { type: integer, nullable: true }
+        active: { type: boolean }
+        sortOrder: { type: integer }
