@@ -1,0 +1,15 @@
+{
+  "name": "yuki-trader-pro-backend",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Backend Yuki Trader Pro V3 — auth JWT, sync cloud, Google Play Billing, FCM, monitoring, sauvegardes. Voir README_BACKEND.md.",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/run-all.js",
+    "backup": "node scripts/backup-cron.js"
+  },
+  "dependencies": {}
+}
