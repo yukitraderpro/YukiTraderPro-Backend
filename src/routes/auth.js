@@ -9,7 +9,7 @@ const config = require("../config");
 const router = new Router();
 
 const REFRESH_COOKIE = config.refreshCookieName;
-const cookieOpts = { httpOnly: true, secure: config.cookieSecure, sameSite: "Strict", path: "/api/auth", maxAgeSeconds: config.jwtRefreshTtlSeconds };
+const cookieOpts = { httpOnly: true, secure: config.cookieSecure, sameSite: config.cookieSameSite, path: "/api/auth", maxAgeSeconds: config.jwtRefreshTtlSeconds };
 
 /* Le refresh token n'est plus jamais renvoyé dans le corps JSON ni stocké
    côté client (localStorage) : il est posé en cookie HttpOnly+Secure,

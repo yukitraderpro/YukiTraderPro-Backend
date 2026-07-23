@@ -6,6 +6,7 @@ const notificationsRoutes = require("./routes/notifications");
 const healthRoutes = require("./routes/health");
 const adminRoutes = require("./routes/admin");
 const csvImportRoutes = require("./routes/csvImport");
+const waitlistRoutes = require("./routes/waitlist");
 
 function buildApp() {
   const app = createApp();
@@ -15,6 +16,7 @@ function buildApp() {
   app.use("/api/notifications", notificationsRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api/csv", csvImportRoutes);
+  app.use("/api/waitlist", waitlistRoutes);
   app.use("/api", healthRoutes);
   return app;
 }

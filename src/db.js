@@ -31,6 +31,13 @@ function open(dbPath = config.dbPath) {
 
 function migrate() {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS waitlist (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      source TEXT,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,

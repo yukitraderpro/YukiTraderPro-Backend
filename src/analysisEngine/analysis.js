@@ -261,6 +261,203 @@ function applyCorrelationRS(a, values, benchValues, benchLabel) {
 }
 
 /* ==========================================================================
+   Régime de marché (V4.1) — tendance / range / volatil / indéterminé
+   --------------------------------------------------------------------------
+   Principe : les indicateurs suiveurs de tendance (MACD, SuperTrend, ADX,
+   Ichimoku, structure de marché...) sont statistiquement plus fiables en
+   marché directionnel, et les indicateurs de retour à la moyenne (Bollinger,
+   RSI, supports/résistances, VWAP...) plus fiables en range. Plutôt que
+   d'appliquer les mêmes votes partout, on classe d'abord le contexte à
+   partir de mesures déjà calculées par le moteur (ADX = force
+   directionnelle ; largeur des bandes de Bollinger comparée à sa propre
+   histoire récente = expansion/compression de volatilité), puis on module
+   les votes de façon BORNÉE (×0.8 à ×1.2 maximum) — jamais d'exclusion
+   totale d'un indicateur, pour rester robuste à une erreur de
+   classification. Aucune statistique inventée : uniquement ADX et
+   Bollinger, déjà présents et testés dans ce fichier.
+   ========================================================================== */
+const REGIME_TREND_FOLLOWERS = [
+  "trend_court", "trend_long", "momentum_court", "momentum_moyen", "macd",
+  "adx", "supertrend", "ichimoku", "market_structure", "breakout_pullback"
+];
+const REGIME_MEAN_REVERTERS = [
+  "rsi", "bollinger", "support_resistance", "vwap", "order_blocks", "fvg", "liquidity"
+];
+const REGIME_MULT_BOOST = 1.2, REGIME_MULT_DAMP = 0.8, REGIME_MULT_CAUTION = 0.85;
+
+function detectMarketRegime(values, bwLookback = 60) {
+  if (!values || values.length < 90) return null;
+  const closes = values.map(v => v.close);
+  const adxRes = adxIndicator(values);
+  const bbNow = bollinger(closes);
+  if (!adxRes || !bbNow) return null;
+  /* Percentile de la largeur de bande actuelle vs les `bwLookback` fenêtres
+     précédentes (même instrument, même unité de temps — donc auto-calibré,
+     pas de seuil absolu arbitraire qui varierait d'un actif à l'autre). */
+  const bwHistory = [];
+  const start = Math.max(20, closes.length - bwLookback);
+  for (let end = start; end < closes.length; end++) {
+    const bb = bollinger(closes.slice(0, end));
+    if (bb) bwHistory.push(bb.bandwidth);
+  }
+  let bwPercentile = 0.5;
+  if (bwHistory.length >= 10) {
+    const below = bwHistory.filter(b => b <= bbNow.bandwidth).length;
+    bwPercentile = below / bwHistory.length;
+  }
+  let regime = "indéterminé";
+  if (adxRes.adx >= 25) regime = "tendance";
+  else if (adxRes.adx < 18 && bwPercentile <= 0.55) regime = "range";
+  else if (bwPercentile >= 0.9) regime = "volatil";
+  return { regime, adx: adxRes.adx, bandwidth: bbNow.bandwidth, bandwidthPercentile: bwPercentile };
+}
+
+/* Multiplicateur de vote selon le régime — borné, jamais éliminatoire. */
+function regimeMultiplier(regime, indicatorName) {
+  if (!regime || regime === "indéterminé" || !indicatorName) return 1;
+  if (regime === "volatil") return REGIME_MULT_CAUTION;
+  if (regime === "tendance") {
+    if (REGIME_TREND_FOLLOWERS.includes(indicatorName)) return REGIME_MULT_BOOST;
+    if (REGIME_MEAN_REVERTERS.includes(indicatorName)) return REGIME_MULT_DAMP;
+    return 1;
+  }
+  if (regime === "range") {
+    if (REGIME_MEAN_REVERTERS.includes(indicatorName)) return REGIME_MULT_BOOST;
+    if (REGIME_TREND_FOLLOWERS.includes(indicatorName)) return REGIME_MULT_DAMP;
+    return 1;
+  }
+  return 1;
+}
+
+/* ==========================================================================
+   RSI (série Wilder) + divergences prix/RSI (V4.1)
+   --------------------------------------------------------------------------
+   Divergence haussière : le prix inscrit un plus bas plus bas alors que le
+   RSI inscrit un plus bas plus haut (l'élan vendeur s'essouffle malgré le
+   nouveau creux). Divergence baissière : symétrique sur les sommets. Les
+   pivots utilisés sont détectés avec la même règle 2-2 que
+   `supportResistance`/`detectMarketStructure` (cohérence interne du moteur).
+   ========================================================================== */
+function rsiSeriesCalc(closes, n = 14) {
+  if (closes.length < n + 2) return null;
+  const out = new Array(closes.length).fill(null);
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= n; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gain += d; else loss -= d;
+  }
+  gain /= n; loss /= n;
+  out[n] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+  for (let i = n + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    gain = (gain * (n - 1) + Math.max(0, d)) / n;
+    loss = (loss * (n - 1) + Math.max(0, -d)) / n;
+    out[i] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+  }
+  return out;
+}
+
+function detectRsiDivergence(values, lookback = 60) {
+  if (!values || values.length < 90) return null;
+  const closes = values.map(v => v.close);
+  const rsiS = rsiSeriesCalc(closes);
+  if (!rsiS) return null;
+  const from = Math.max(2, values.length - lookback);
+  const swingHighs = [], swingLows = [];
+  for (let i = from; i < values.length - 2; i++) {
+    const c = values[i];
+    if (rsiS[i] === null) continue;
+    if (c.high > values[i - 1].high && c.high > values[i - 2].high && c.high > values[i + 1].high && c.high > values[i + 2].high) swingHighs.push({ i, price: c.high, rsi: rsiS[i] });
+    if (c.low < values[i - 1].low && c.low < values[i - 2].low && c.low < values[i + 1].low && c.low < values[i + 2].low) swingLows.push({ i, price: c.low, rsi: rsiS[i] });
+  }
+  let bullish = false, bearish = false;
+  if (swingLows.length >= 2) {
+    const [a, b] = swingLows.slice(-2);
+    if (b.price < a.price && b.rsi > a.rsi + 1) bullish = true;
+  }
+  if (swingHighs.length >= 2) {
+    const [a, b] = swingHighs.slice(-2);
+    if (b.price > a.price && b.rsi < a.rsi - 1) bearish = true;
+  }
+  if (!bullish && !bearish) return null;
+  return { bullish, bearish };
+}
+
+/* ==========================================================================
+   Confiance calibrée — intervalle de Wilson (V4.1)
+   --------------------------------------------------------------------------
+   Sur un petit nombre de signaux mesurés, un taux de réussite brut (ex.
+   « 75% » après 4 signaux) est trompeur. L'intervalle de Wilson donne une
+   fourchette honnête : « entre X% et Y% avec 95% de confiance, sur N
+   signaux mesurés ». C'est la traduction statistique du principe « ne
+   jamais inventer une justification » appliqué aux performances passées.
+   ========================================================================== */
+function wilsonInterval(wins, total, z = 1.96) {
+  if (!Number.isFinite(wins) || !Number.isFinite(total) || total <= 0 || wins < 0 || wins > total) return null;
+  const p = wins / total, z2 = z * z;
+  const denom = 1 + z2 / total;
+  const center = (p + z2 / (2 * total)) / denom;
+  const margin = (z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total)) / denom;
+  return {
+    rate: Math.round(p * 100),
+    low: Math.max(0, Math.round((center - margin) * 100)),
+    high: Math.min(100, Math.round((center + margin) * 100)),
+    sample: total
+  };
+}
+
+/* ==========================================================================
+   Backtest walk-forward (V4.1) — mesure honnête, sans biais du futur
+   --------------------------------------------------------------------------
+   Rejoue le moteur sur l'historique : à chaque pas, l'analyse ne voit QUE
+   les bougies antérieures (aucune fuite du futur), le résultat est ensuite
+   évalué `horizonBars` bougies plus tard avec la même règle
+   gagnant/perdant/neutre (`evaluateSignal`) que le suivi en production.
+   Renvoie le taux de réussite global ET par régime de marché, chacun avec
+   son intervalle de Wilson — c'est ce qui permet d'affirmer, mesures à
+   l'appui, quand le moteur est fiable et quand il ne l'est pas.
+   `analyseFn(slice)` est fournie par l'appelant (app.js : `analyseSeries`) ;
+   ce module reste pur (aucun fetch, aucun stockage, aucun accès DOM).
+   ========================================================================== */
+function walkForwardBacktest(values, analyseFn, opts = {}) {
+  const warmup = opts.warmup || 120;
+  const step = Math.max(1, opts.step || 3);
+  const horizonBars = Math.max(1, opts.horizonBars || 12);
+  const minMovePct = opts.minMovePct === undefined ? 0.3 : opts.minMovePct;
+  if (!values || values.length < warmup + horizonBars + 1 || typeof analyseFn !== "function") return null;
+
+  const trades = [];
+  let evaluated = 0, wins = 0, losses = 0, neutral = 0, waits = 0;
+  const byRegime = {};
+  for (let i = warmup; i <= values.length - horizonBars - 1; i += step) {
+    const visible = values.slice(0, i);
+    let r;
+    try { r = analyseFn(visible); } catch { continue; }
+    if (!r || !r.signal) continue;
+    const regimeKey = (r.marketRegime && r.marketRegime.regime) || "indéterminé";
+    if (r.signal === "ATTENDRE") { waits++; continue; }
+    const entry = visible.at(-1).close;
+    const later = values[i + horizonBars - 1].close;
+    const outcome = evaluateSignal(r.signal, entry, later, minMovePct);
+    evaluated++;
+    if (outcome === "gagnant") wins++; else if (outcome === "perdant") losses++; else neutral++;
+    if (!byRegime[regimeKey]) byRegime[regimeKey] = { evaluated: 0, wins: 0, losses: 0, neutral: 0 };
+    const b = byRegime[regimeKey];
+    b.evaluated++;
+    if (outcome === "gagnant") b.wins++; else if (outcome === "perdant") b.losses++; else b.neutral++;
+    trades.push({ index: i, signal: r.signal, confidence: r.confidence, regime: regimeKey, entry, exit: later, outcome });
+  }
+  const decided = wins + losses;
+  const overall = decided > 0 ? wilsonInterval(wins, decided) : null;
+  for (const k of Object.keys(byRegime)) {
+    const b = byRegime[k];
+    const d = b.wins + b.losses;
+    b.wilson = d > 0 ? wilsonInterval(b.wins, d) : null;
+  }
+  return { trades, evaluated, wins, losses, neutral, waits, decided, overall, byRegime, horizonBars, minMovePct };
+}
+
+/* ==========================================================================
    Confluence multi-indicateurs
    --------------------------------------------------------------------------
    Combine tous les indicateurs ci-dessus en un score, un nombre de votes
@@ -283,22 +480,26 @@ const INDICATOR_NAMES = [
   "trend_court", "trend_long", "rsi", "momentum_court", "momentum_moyen",
   "macd", "bollinger", "adx", "supertrend", "ichimoku", "volume",
   "support_resistance", "vwap", "breakout_pullback", "order_blocks",
-  "fvg", "liquidity", "market_structure"
+  "fvg", "liquidity", "market_structure", "rsi_divergence"
 ];
 function defaultIndicatorWeights() {
   const w = {}; INDICATOR_NAMES.forEach(n => w[n] = 1); return w;
 }
 
-function buildConfluence(values, baseScore, baseReasons, baseVotes, weights) {
+function buildConfluence(values, baseScore, baseReasons, baseVotes, weights, marketRegime) {
   weights = weights || {};
   const closes = values.map(v => v.close), price = closes.at(-1);
   let score = baseScore, agree = 0, disagree = 0;
   const reasons = [...baseReasons];
   const votes = [...(baseVotes || [])];
   let available = 0, total = 0;
+  const regimeName = marketRegime && marketRegime.regime ? marketRegime.regime : null;
+  if (regimeName === "tendance") reasons.push("Régime de marché : tendance (ADX ≥ 25) — indicateurs de tendance renforcés");
+  else if (regimeName === "range") reasons.push("Régime de marché : range (ADX faible, volatilité comprimée) — indicateurs de retour à la moyenne renforcés");
+  else if (regimeName === "volatil") reasons.push("Régime de marché : expansion de volatilité — tous les votes tempérés par prudence");
   const w = name => weights[name] === undefined ? 1 : weights[name];
   const vote = (v, label, name) => {
-    const wv = v * (name ? w(name) : 1);
+    const wv = v * (name ? w(name) * regimeMultiplier(regimeName, name) : 1);
     if (v > 0) agree++; else if (v < 0) disagree++;
     if (label) reasons.push(label);
     if (name) votes.push({ name, dir: v > 0 ? 1 : v < 0 ? -1 : 0, magnitude: Math.abs(v), label: label || null });
@@ -388,9 +589,15 @@ function buildConfluence(values, baseScore, baseReasons, baseVotes, weights) {
     else if (ms.choch) { vote(0, null, "market_structure"); reasons.push("Changement de caractère possible (CHoCH) — structure en transition"); }
   }
 
+  total++; const div = detectRsiDivergence(values);
+  if (div) { available++;
+    if (div.bullish) vote(0.5, "Divergence haussière prix/RSI (élan vendeur en essoufflement)", "rsi_divergence");
+    if (div.bearish) vote(-0.5, "Divergence baissière prix/RSI (élan acheteur en essoufflement)", "rsi_divergence");
+  }
+
   const falseSignalRisk = disagree >= 3 && agree <= disagree;
   const dataCompleteness = total > 0 ? available / total : 0;
-  return { score, reasons, strongTrend, falseSignalRisk, agree, disagree, votes, dataCompleteness, sr };
+  return { score, reasons, strongTrend, falseSignalRisk, agree, disagree, votes, dataCompleteness, sr, marketRegime: marketRegime || null };
 }
 
 /* ---- Contrainte « ne jamais inventer une justification » -----------------
@@ -638,6 +845,9 @@ if (typeof module !== "undefined" && module.exports) {
     buildSimpleAiBrief,
     higherTimeframe, confirmWithHigherTimeframe, computeScenarios, evaluateSignal,
     updateIndicatorWeights, defaultIndicatorWeights, isDataInsufficient,
-    clampWeight, WEIGHT_MIN, WEIGHT_MAX, WEIGHT_STEP, INDICATOR_NAMES
+    clampWeight, WEIGHT_MIN, WEIGHT_MAX, WEIGHT_STEP, INDICATOR_NAMES,
+    detectMarketRegime, regimeMultiplier, rsiSeriesCalc, detectRsiDivergence,
+    wilsonInterval, walkForwardBacktest,
+    REGIME_TREND_FOLLOWERS, REGIME_MEAN_REVERTERS
   };
 }

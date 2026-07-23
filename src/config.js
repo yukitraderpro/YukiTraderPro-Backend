@@ -40,6 +40,12 @@ const config = {
   // production pour permettre les tests locaux en http://localhost.
   refreshCookieName: required("REFRESH_COOKIE_NAME", "yuki_refresh"),
   cookieSecure: required("COOKIE_SECURE", required("NODE_ENV", "development") === "production" ? "true" : "false") === "true",
+  // "Strict"/"Lax" seulement valable en same-origin (ex. proxy Netlify /api).
+  // En déploiement cross-origin (ex. Render : frontend et backend sur deux
+  // sous-domaines .onrender.com distincts), le cookie de refresh ne sera
+  // JAMAIS renvoyé par le navigateur si SameSite=Strict — mettre
+  // COOKIE_SAMESITE=None (nécessite cookieSecure=true, déjà le cas en prod).
+  cookieSameSite: required("COOKIE_SAMESITE", "Strict"),
 
   // Google Play Billing (Play Developer API — androidpublisher).
   // Nécessite un compte de service Google Cloud avec accès Play Console.

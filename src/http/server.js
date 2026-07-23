@@ -7,6 +7,8 @@
    ========================================================================== */
 const http = require("http");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const config = require("../config");
 const logger = require("../logger");
 
@@ -137,7 +139,32 @@ function createApp() {
     metrics.byRoute[routeKey] = (metrics.byRoute[routeKey] || 0) + 1;
 
     try {
-      if (!matched) { respondJson(404, { error: "Route introuvable." }); return; }
+      if (!matched) {
+        /* Fichiers statiques (landing page) — servis depuis `public/` pour
+           toute route GET hors /api. Un seul service Render suffit ainsi
+           pour la landing ET l'API (architecture same-origin : le
+           formulaire appelle /api/waitlist sans CORS). Sécurité :
+           résolution du chemin PUIS vérification qu'il reste bien dans
+           public/ (aucune traversée `../` possible). */
+        if (req.method === "GET" && !url.pathname.startsWith("/api")) {
+          const publicDir = path.resolve(__dirname, "..", "..", "public");
+          const relative = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+          const filePath = path.resolve(publicDir, relative);
+          if (filePath.startsWith(publicDir + path.sep) || filePath === path.join(publicDir, "index.html")) {
+            let served = null;
+            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) served = filePath;
+            else if (fs.existsSync(path.join(publicDir, "index.html"))) served = path.join(publicDir, "index.html"); // repli SPA/landing
+            if (served) {
+              const types = { ".html": "text/html; charset=utf-8", ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml", ".css": "text/css", ".js": "text/javascript", ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8" };
+              const body = fs.readFileSync(served);
+              res.writeHead(200, { "Content-Type": types[path.extname(served)] || "application/octet-stream", "Content-Length": body.length, "Cache-Control": served.endsWith("index.html") ? "no-cache" : "public, max-age=86400" });
+              res.end(body);
+              return;
+            }
+          }
+        }
+        respondJson(404, { error: "Route introuvable." }); return;
+      }
 
       let body;
       if (req.method === "POST" || req.method === "PUT") body = await readBody(req);
