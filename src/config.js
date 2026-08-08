@@ -35,6 +35,16 @@ const config = {
 
   corsOrigin: required("CORS_ORIGIN", "*"),
 
+  /* Envoi d'e-mails transactionnels (réinitialisation de mot de passe).
+     RESEND_API_KEY vide = envoi désactivé, le lien est alors seulement
+     journalisé (utile en développement, anomalie en production).
+     APP_PUBLIC_URL sert à construire le lien de réinitialisation : il doit
+     pointer vers le frontend, pas vers l'API. */
+  resendApiKey: required("RESEND_API_KEY", ""),
+  mailFrom: required("MAIL_FROM", "Yuki Trader Pro <noreply@yukitraderpro.com>"),
+  appPublicUrl: required("APP_PUBLIC_URL", "https://www.yukitraderpro.com").replace(/\/+$/, ""),
+  passwordResetTtlSeconds: parseInt(required("PASSWORD_RESET_TTL_SECONDS", "3600"), 10),
+
   // Cookie httpOnly du refresh token (V4 commerciale — jamais de refresh
   // token en localStorage). `Secure` est désactivé automatiquement hors
   // production pour permettre les tests locaux en http://localhost.

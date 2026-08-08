@@ -58,6 +58,18 @@ function migrate() {
       revoked_at INTEGER
     );
 
+    /* Réinitialisation de mot de passe. On ne stocke JAMAIS le jeton en clair :
+       seul son SHA-256 est conservé, exactement comme pour les refresh tokens.
+       Un jeton est à usage unique (used_at) et expire au bout d'une heure. */
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used_at INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

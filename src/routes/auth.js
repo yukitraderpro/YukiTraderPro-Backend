@@ -5,6 +5,9 @@ const { HttpError } = require("../http/server");
 const db = require("../db");
 const crypto = require("crypto");
 const config = require("../config");
+const logger = require("../logger");
+const mailService = require("../services/mailService");
+const { hashPassword } = require("../crypto/password");
 
 const router = new Router();
 
@@ -71,6 +74,97 @@ router.post("/delete-account", authenticate, async ctx => {
       ? "Votre compte a été supprimé. Attention : votre abonnement Google Play reste actif et doit être résilié depuis le Play Store pour éviter tout nouveau prélèvement."
       : null
   });
+});
+
+/* ==========================================================================
+   Réinitialisation de mot de passe (V4.11)
+   --------------------------------------------------------------------------
+   Deux étapes : /forgot-password envoie un lien par e-mail, /reset-password
+   consomme le jeton et change le mot de passe.
+
+   Trois précautions de sécurité :
+   1. Anti-énumération — la réponse de /forgot-password est TOUJOURS identique,
+      que l'e-mail existe ou non. Sinon l'endpoint devient un oracle permettant
+      de découvrir quels comptes existent.
+   2. Jeton jamais stocké en clair — seul son SHA-256 est en base, comme pour
+      les refresh tokens. Une fuite de la base ne permet pas de forger un lien.
+   3. Invalidation des sessions — changer le mot de passe révoque tous les
+      refresh tokens : si un attaquant avait une session ouverte, elle tombe.
+   ========================================================================== */
+
+function hashToken(token) { return crypto.createHash("sha256").update(token).digest("hex"); }
+
+router.post("/forgot-password", async ctx => {
+  const { email } = ctx.body || {};
+  const genericResponse = {
+    ok: true,
+    message: "Si un compte existe pour cette adresse, un e-mail de réinitialisation vient d'être envoyé. Pensez à vérifier vos courriers indésirables."
+  };
+
+  if (!email || typeof email !== "string") {
+    ctx.res.json(200, genericResponse);
+    return;
+  }
+
+  const normalized = authService.normEmail(email);
+  const conn = db.get();
+  const user = conn.prepare("SELECT id, email FROM users WHERE email = ?").get(normalized);
+
+  if (!user) {
+    /* Compte inexistant : on répond exactement comme en cas de succès. */
+    logger.info("[auth] Demande de réinitialisation pour une adresse inconnue.");
+    ctx.res.json(200, genericResponse);
+    return;
+  }
+
+  /* Un seul jeton actif à la fois : les précédents sont neutralisés. */
+  conn.prepare("UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL")
+    .run(Date.now(), user.id);
+
+  const token = crypto.randomBytes(32).toString("base64url");
+  const now = Date.now();
+  conn.prepare(`
+    INSERT INTO password_resets (id, user_id, token_hash, created_at, expires_at, used_at)
+    VALUES (?, ?, ?, ?, ?, NULL)
+  `).run(crypto.randomUUID(), user.id, hashToken(token), now, now + config.passwordResetTtlSeconds * 1000);
+
+  const resetUrl = `${config.appPublicUrl}/reinitialiser-mot-de-passe.html?token=${encodeURIComponent(token)}`;
+  await mailService.sendPasswordReset(user.email, resetUrl);
+
+  ctx.res.json(200, genericResponse);
+});
+
+router.post("/reset-password", async ctx => {
+  const { token, password } = ctx.body || {};
+  if (!token || !password) throw new HttpError(400, "Jeton et nouveau mot de passe requis.");
+  if (String(password).length < 6) throw new HttpError(400, "Le mot de passe doit contenir au moins 6 caractères.");
+
+  const conn = db.get();
+  const row = conn.prepare("SELECT id, user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?")
+    .get(hashToken(String(token)));
+
+  /* Message volontairement identique pour un jeton inexistant, déjà utilisé ou
+     expiré : aucune information exploitable n'est renvoyée. */
+  const invalid = () => new HttpError(400, "Ce lien de réinitialisation est invalide ou a expiré. Veuillez en demander un nouveau.");
+  if (!row || row.used_at || row.expires_at < Date.now()) throw invalid();
+
+  const user = conn.prepare("SELECT id, email FROM users WHERE id = ?").get(row.user_id);
+  if (!user) throw invalid();
+
+  const tx = conn.transaction(() => {
+    conn.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(String(password)), user.id);
+    conn.prepare("UPDATE password_resets SET used_at = ? WHERE id = ?").run(Date.now(), row.id);
+    /* Toutes les sessions existantes tombent : c'est le comportement attendu
+       après un changement de mot de passe, et la seule façon de couper l'accès
+       d'un tiers qui aurait compromis le compte. */
+    conn.prepare("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+      .run(Date.now(), user.id);
+  });
+  tx();
+
+  logger.info("[auth] Mot de passe réinitialisé avec succès.");
+  clearRefreshCookie(ctx);
+  ctx.res.json(200, { ok: true, message: "Votre mot de passe a été modifié. Vous pouvez maintenant vous connecter." });
 });
 
 router.get("/me", authenticate, async ctx => {
