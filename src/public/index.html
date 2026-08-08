@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YukiTraderPro — Le copilote de trading qui te dit aussi quand il n'est pas fiable</title>
+<meta name="description" content="Analyse technique multi-indicateurs, régimes de marché, backtest transparent. Rejoins la liste d'attente et verrouille le tarif Fondateur à 9,90€/mois à vie (1 000 places).">
+<meta property="og:title" content="YukiTraderPro — bientôt sur Android">
+<meta property="og:description" content="Le copilote de trading honnête. Tarif Fondateur 9,90€/mois à vie pour les 1 000 premiers.">
+<meta property="og:image" content="https://yukitraderpro.com/assets/yuki-avatar-250.png">
+<link rel="icon" href="assets/yuki-avatar-96.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#0f172a;--dark:#020617;--surface:#1e293b;--surface2:#0b1220;
+  --text:#e2e8f0;--muted:#a5b4cc;--blue:#38bdf8;--green:#22c55e;
+  --red:#fb7185;--yellow:#fbbf24;--border:#334155;
+  --display:'Space Grotesk',system-ui,sans-serif;
+  --body:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(var(--bg),var(--dark) 90%);color:var(--text);font-family:var(--body);font-size:16px;line-height:1.6}
+.wrap{max-width:980px;margin:0 auto;padding:0 20px}
+
+/* ---- Hero ---- */
+header{padding:26px 0 8px}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.15rem}
+.brand img{width:38px;height:38px;border-radius:11px}
+.hero{display:grid;grid-template-columns:1.15fr .85fr;gap:36px;align-items:center;padding:44px 0 30px}
+.hero h1{font-family:var(--display);font-weight:700;font-size:clamp(1.9rem,4.6vw,3rem);line-height:1.13;margin:0 0 16px;letter-spacing:-.015em}
+.hero h1 em{font-style:normal;color:var(--blue)}
+.hero p.lede{color:var(--muted);font-size:1.06rem;margin:0 0 26px;max-width:34em}
+.badge{display:inline-block;background:#0c4a6e;color:#bae6fd;border-radius:999px;padding:5px 13px;font-size:.8rem;font-weight:600;margin-bottom:18px}
+
+/* ---- Formulaire ---- */
+.signup{display:flex;gap:9px;flex-wrap:wrap}
+.signup input[type=email]{flex:1 1 220px;font:inherit;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:13px;padding:13px 15px}
+.signup input[type=email]:focus{outline:2px solid var(--blue);outline-offset:1px;border-color:transparent}
+.signup button{font:inherit;font-weight:800;background:var(--blue);color:#082f49;border:0;border-radius:13px;padding:13px 21px;cursor:pointer}
+.signup button:hover{filter:brightness(1.08)}
+.signup button:focus-visible{outline:2px solid #e0f2fe;outline-offset:2px}
+.form-note{color:var(--muted);font-size:.82rem;margin-top:9px}
+.hidden{display:none}
+.confirm{background:#14532d;color:#bbf7d0;border-radius:13px;padding:13px 15px;font-weight:600}
+
+/* ---- Signature : démo du moteur honnête ---- */
+.demo-card{background:rgba(30,41,59,.96);border:1px solid var(--border);border-radius:19px;padding:19px;box-shadow:0 18px 50px rgba(2,6,23,.55)}
+.demo-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:13px}
+.demo-head strong{font-family:var(--display)}
+.regime{font-size:.74rem;font-weight:700;border-radius:999px;padding:4px 10px;background:#0c4a6e;color:#bae6fd;white-space:nowrap}
+.regime.range{background:#3b2f04;color:#fde68a}
+.regime.off{background:#3f1d24;color:#fecdd3}
+.demo-signal{text-align:center;background:var(--surface2);border-radius:15px;padding:17px 12px;margin-bottom:12px}
+.demo-signal strong{display:block;font-family:var(--display);font-size:1.7rem;letter-spacing:.01em}
+.demo-signal .buy{color:var(--green)}.demo-signal .wait{color:var(--yellow)}
+.demo-signal small{color:var(--muted)}
+.demo-proof{font-variant-numeric:tabular-nums;background:var(--surface2);border:1px dashed var(--border);border-radius:13px;padding:11px 13px;font-size:.87rem;color:var(--muted)}
+.demo-proof b{color:var(--text)}
+.demo-caption{margin-top:11px;font-size:.8rem;color:var(--muted);text-align:center}
+@keyframes fadeSwap{0%{opacity:0;transform:translateY(4px)}8%,92%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-4px)}}
+.demo-stage{animation:fadeSwap 5.5s ease infinite}
+@media (prefers-reduced-motion: reduce){.demo-stage{animation:none}}
+
+/* ---- Sections ---- */
+section{padding:34px 0}
+h2{font-family:var(--display);font-weight:700;font-size:clamp(1.35rem,3vw,1.8rem);letter-spacing:-.01em;margin:0 0 20px}
+.pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+.pillar{background:rgba(30,41,59,.96);border:1px solid var(--border);border-radius:19px;padding:18px}
+.pillar h3{font-family:var(--display);margin:0 0 8px;font-size:1.03rem}
+.pillar h3 span{display:block;font-size:1.45rem;margin-bottom:7px}
+.pillar p{margin:0;color:var(--muted);font-size:.92rem}
+
+/* ---- Offre Fondateur ---- */
+.founder{background:linear-gradient(135deg,#0c4a6e,#082f49);border:1px solid #1d6a94;border-radius:22px;padding:28px;display:grid;grid-template-columns:1fr auto;gap:22px;align-items:center}
+.founder h2{margin-bottom:9px}
+.founder p{margin:0;color:#bae6fd;max-width:38em}
+.price{text-align:center;background:rgba(2,6,23,.45);border-radius:17px;padding:17px 23px;white-space:nowrap}
+.price .now{font-family:var(--display);font-size:2rem;font-weight:700;color:#e0f2fe}
+.price .was{color:#7dd3fc;text-decoration:line-through;font-size:.95rem}
+.price small{display:block;color:#bae6fd;font-size:.78rem;margin-top:4px}
+
+/* ---- FAQ + footer ---- */
+details{background:rgba(30,41,59,.96);border:1px solid var(--border);border-radius:15px;padding:14px 17px;margin:9px 0}
+summary{cursor:pointer;font-weight:600}
+details p{color:var(--muted);margin:10px 0 2px}
+footer{border-top:1px solid var(--border);margin-top:26px;padding:24px 0 34px;color:var(--muted);font-size:.82rem}
+footer p{margin:6px 0}
+
+@media (max-width:760px){
+  .hero{grid-template-columns:1fr;gap:26px;padding-top:26px}
+  .pillars{grid-template-columns:1fr}
+  .founder{grid-template-columns:1fr}
+  .price{justify-self:start}
+}
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="brand"><img src="assets/yuki-avatar-96.png" alt="" width="38" height="38">YukiTraderPro</div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <span class="badge">Bientôt sur Android — liste d'attente ouverte</span>
+      <h1>Le copilote de trading qui te dit aussi <em>quand il n'est pas fiable</em>.</h1>
+      <p class="lede">18 indicateurs en confluence, détection du régime de marché, backtest transparent. Yuki ne promet jamais de gains : il te montre ses taux de réussite mesurés, intervalle de confiance compris — et s'abstient quand les données ne suffisent pas.</p>
+
+      <form class="signup" id="waitlistForm">
+        <input type="email" name="email" required placeholder="ton@email.com" aria-label="Adresse e-mail" autocomplete="email" maxlength="254">
+        <button type="submit" id="submitBtn">Rejoindre l'accès anticipé</button>
+      </form>
+      <p class="confirm hidden" id="confirmMsg">C'est noté ! Tu recevras ton invitation au test fermé et ton lien Fondateur avant tout le monde. 🐾</p>
+      <p class="confirm hidden" id="errorMsg" style="background:#451a03;color:#fde68a"></p>
+      <p class="form-note">Tarif Fondateur verrouillé à vie pour les 1 000 premiers abonnés. Zéro spam : invitation au test fermé + annonce de lancement, c'est tout.</p>
+    </div>
+
+    <div class="demo-card" aria-label="Aperçu du produit">
+      <div class="demo-head"><strong>EUR/USD · 4h</strong><span class="regime" id="demoRegime">Régime : tendance</span></div>
+      <div class="demo-stage" id="demoStage">
+        <div class="demo-signal"><strong class="buy" id="demoSignal">ACHETER</strong><small id="demoConf">Confiance 84 % · risque modéré</small></div>
+        <div class="demo-proof" id="demoProof">Fiabilité mesurée en <b>tendance</b> : <b>81 %</b> [79–84] sur 976 signaux backtestés.</div>
+      </div>
+      <p class="demo-caption">Aperçu illustratif du fonctionnement — pas une recommandation d'investissement.</p>
+    </div>
+  </div>
+
+  <section class="wrap">
+    <h2>Pourquoi Yuki est différent</h2>
+    <div class="pillars">
+      <div class="pillar"><h3><span>🧭</span>Il lit le contexte avant de voter</h3><p>Tendance, range ou volatilité extrême : le moteur classe d'abord le régime de marché, puis ajuste le poids de chaque indicateur. Un RSI ne se lit pas pareil dans un range et dans une tendance.</p></div>
+      <div class="pillar"><h3><span>📏</span>Il prouve, il ne promet pas</h3><p>Chaque taux de réussite vient d'un backtest sans triche (le moteur ne voit jamais le futur), affiché avec son intervalle de confiance et la taille de l'échantillon. Pas assez de données ? Il le dit.</p></div>
+      <div class="pillar"><h3><span>🐱</span>Il parle ta langue</h3><p>Mode Simple sans jargon pour débuter, Mode Expert complet quand tu progresses (SMC, order blocks, multi-unités de temps). Yuki t'explique chaque signal en français clair.</p></div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="founder">
+      <div>
+        <h2>Offre Fondateur — 1 000 places, pas une de plus</h2>
+        <p>Inscris-toi à la liste d'attente et verrouille le tarif Fondateur <strong>à vie</strong>, même quand le prix passera au tarif Standard. La 1 001ᵉ personne paiera le double : c'est codé en dur dans l'application, pas un compte à rebours marketing.</p>
+      </div>
+      <div class="price"><span class="was">19,90 €/mois</span><br><span class="now">9,90 €</span><small>par mois, à vie · 7 jours d'essai gratuit</small></div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <h2>Questions fréquentes</h2>
+    <details><summary>Yuki passe-t-il des ordres à ma place ?</summary><p>Non. Yuki analyse et explique ; la décision et l'exécution restent chez ton courtier, sous ton contrôle. C'est un copilote, pas un pilote automatique.</p></details>
+    <details><summary>Est-ce que ça garantit des gains ?</summary><p>Non, et méfie-toi de quiconque te promet le contraire. Yuki affiche des probabilités mesurées sur le passé, jamais des certitudes sur l'avenir. Investir comporte des risques de perte en capital.</p></details>
+    <details><summary>Quand sort l'application ?</summary><p>Le test fermé Android démarre bientôt : les inscrits à la liste d'attente sont invités en premier et leurs retours façonnent la version finale.</p></details>
+    <details><summary>Que faites-vous de mon e-mail ?</summary><p>Invitation au test fermé, annonce de lancement avec ton lien Fondateur, et rien d'autre. Désinscription en un clic, adresse jamais partagée.</p></details>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><strong>⚠️ Avertissement :</strong> YukiTraderPro est un outil d'aide à l'analyse, pas un conseil en investissement. Investir comporte des risques de perte en capital. Les performances passées, y compris backtestées, ne préjugent pas des performances futures.</p>
+    <p>© 2026 YukiTraderPro · <a href="https://yukitraderpro.com/privacy" style="color:var(--muted)">Confidentialité</a> · contact@yukitraderpro.com</p>
+  </div>
+</footer>
+
+<script>
+/* Démo rotative : trois états réels du moteur (signal en tendance, prudence en
+   range, abstention honnête). Respecte prefers-reduced-motion. */
+(function(){
+  const states=[
+    {regime:"Régime : tendance",cls:"",sig:"ACHETER",sigCls:"buy",conf:"Confiance 84 % · risque modéré",
+     proof:'Fiabilité mesurée en <b>tendance</b> : <b>81 %</b> [79–84] sur 976 signaux backtestés.'},
+    {regime:"Régime : range",cls:"range",sig:"ATTENDRE",sigCls:"wait",conf:"Signaux tempérés hors tendance",
+     proof:'Indicateurs de retour à la moyenne renforcés, seuil de signal durci : <b>prudence</b>.'},
+    {regime:"Données insuffisantes",cls:"off",sig:"ATTENDRE",sigCls:"wait",conf:"Confiance insuffisante",
+     proof:'Historique trop court : Yuki <b>refuse d\'inventer</b> un pourcentage de confiance.'}
+  ];
+  let i=0;
+  const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(reduced)return;
+  setInterval(()=>{ i=(i+1)%states.length; const s=states[i];
+    const r=document.getElementById("demoRegime");
+    r.textContent=s.regime; r.className="regime "+s.cls;
+    const sig=document.getElementById("demoSignal");
+    sig.textContent=s.sig; sig.className=s.sigCls;
+    document.getElementById("demoConf").textContent=s.conf;
+    document.getElementById("demoProof").innerHTML=s.proof;
+  },5500);
+})();
+
+/* Envoi vers VOTRE backend (Render). Un seul réglage :
+   - même domaine avec proxy /api  → laisser "/api/waitlist"
+   - backend sur un autre domaine  → mettre l'URL complète, ex.
+     "https://yukitraderpro-backend.onrender.com/api/waitlist"
+   Dans ce second cas, ajoutez le domaine de la landing dans CORS_ORIGIN
+   côté backend (variable d'environnement Render). */
+const WAITLIST_ENDPOINT = "/api/waitlist";
+
+document.getElementById("waitlistForm").addEventListener("submit", async function(e){
+  e.preventDefault();
+  const btn=document.getElementById("submitBtn"), err=document.getElementById("errorMsg");
+  err.classList.add("hidden"); btn.disabled=true; btn.textContent="Inscription…";
+  try{
+    const res=await fetch(WAITLIST_ENDPOINT,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email:this.email.value.trim(),source:"landing"})
+    });
+    if(res.status===429){throw new Error("Trop de tentatives — réessaie dans quelques minutes.");}
+    if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.error||"Inscription impossible pour le moment. Réessaie plus tard.");}
+    this.classList.add("hidden");
+    document.getElementById("confirmMsg").classList.remove("hidden");
+  }catch(ex){
+    err.textContent=ex.message;
+    err.classList.remove("hidden");
+    btn.disabled=false; btn.textContent="Rejoindre l'accès anticipé";
+  }
+});
+</script>
+</body>
+</html>

@@ -54,6 +54,25 @@ router.post("/logout", async ctx => {
   ctx.res.json(200, { ok: true });
 });
 
+/* Suppression définitive du compte (RGPD + exigence Google Play).
+   Authentification requise ET mot de passe reconfirmé : une suppression est
+   irréversible, on ne se contente pas d'une session valide. Le cookie de
+   rafraîchissement est effacé dans la foulée pour couper la session. */
+router.post("/delete-account", authenticate, async ctx => {
+  const { password } = ctx.body || {};
+  const result = authService.deleteAccount(ctx.userId, password);
+  clearRefreshCookie(ctx);
+  ctx.res.json(200, {
+    ok: true,
+    deleted: true,
+    /* On rappelle explicitement que l'abonnement Play n'est pas résilié par
+       cette action : il appartient à Google, pas à nous. */
+    subscriptionNotice: result.hadSubscription
+      ? "Votre compte a été supprimé. Attention : votre abonnement Google Play reste actif et doit être résilié depuis le Play Store pour éviter tout nouveau prélèvement."
+      : null
+  });
+});
+
 router.get("/me", authenticate, async ctx => {
   const user = authService.getUserById(ctx.userId);
   if (!user) throw new HttpError(404, "Utilisateur introuvable.");

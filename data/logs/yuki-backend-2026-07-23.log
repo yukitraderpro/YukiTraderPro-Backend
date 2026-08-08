@@ -1,0 +1,25 @@
+{"time":"2026-07-23T13:16:48.479Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-b3LPC2/backups/yuki-20260723-131648.sqlite"}
+{"time":"2026-07-23T13:16:48.480Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-b3LPC2/inexistant.sqlite"}
+{"time":"2026-07-23T13:16:48.481Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-07-23T13:16:48.481Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-07-23T13:16:49.507Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}
+{"time":"2026-07-23T13:16:57.692Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-cIlA4R/backups/yuki-20260723-131657.sqlite"}
+{"time":"2026-07-23T13:16:57.693Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-cIlA4R/inexistant.sqlite"}
+{"time":"2026-07-23T13:16:57.694Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-07-23T13:16:57.694Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-07-23T13:16:58.785Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}
+{"time":"2026-07-23T15:27:23.049Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-Lhftgc/backups/yuki-20260723-152723.sqlite"}
+{"time":"2026-07-23T15:27:23.050Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-Lhftgc/inexistant.sqlite"}
+{"time":"2026-07-23T15:27:23.050Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-07-23T15:27:23.051Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-07-23T15:27:24.201Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}
+{"time":"2026-07-23T15:34:04.575Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-BUGeYS/backups/yuki-20260723-153404.sqlite"}
+{"time":"2026-07-23T15:34:04.576Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-BUGeYS/inexistant.sqlite"}
+{"time":"2026-07-23T15:34:04.578Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-07-23T15:34:04.578Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-07-23T15:34:05.751Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}
+{"time":"2026-07-23T15:34:11.499Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-HzqiYk/backups/yuki-20260723-153411.sqlite"}
+{"time":"2026-07-23T15:34:11.500Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-HzqiYk/inexistant.sqlite"}
+{"time":"2026-07-23T15:34:11.501Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-07-23T15:34:11.501Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-07-23T15:34:12.515Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}

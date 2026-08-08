@@ -1,0 +1,15 @@
+{"time":"2026-08-08T06:52:09.785Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-08-08T06:52:24.768Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-08-08T06:52:41.158Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-08-08T06:53:02.427Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-Qecj3C/backups/yuki-20260808-065302.sqlite"}
+{"time":"2026-08-08T06:53:02.428Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-Qecj3C/inexistant.sqlite"}
+{"time":"2026-08-08T06:53:02.429Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-08-08T06:53:02.429Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-08-08T06:53:02.962Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-08-08T06:53:03.712Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}
+{"time":"2026-08-08T06:53:11.900Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-MQki4d/backups/yuki-20260808-065311.sqlite"}
+{"time":"2026-08-08T06:53:11.901Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-MQki4d/inexistant.sqlite"}
+{"time":"2026-08-08T06:53:11.901Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-08-08T06:53:11.901Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-08-08T06:53:12.366Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-08-08T06:53:12.983Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}

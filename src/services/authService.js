@@ -48,6 +48,56 @@ function register(email, password) {
   return toPublicUser(conn.prepare("SELECT * FROM users WHERE id = ?").get(id));
 }
 
+/* ==========================================================================
+   Suppression de compte (RGPD + exigence Google Play 2024)
+   --------------------------------------------------------------------------
+   Google impose que toute application permettant de CRÉER un compte permette
+   aussi de le SUPPRIMER, depuis l'application ET depuis une page web.
+   L'absence de cette fonction est un motif de refus fréquent en revue.
+
+   Ce que fait cette fonction :
+   - exige le mot de passe (une suppression est irréversible : on vérifie
+     que c'est bien le titulaire, pas une session volée) ;
+   - supprime la ligne `users`, ce qui efface EN CASCADE (PRAGMA
+     foreign_keys = ON, voir db.js) : refresh_tokens, devices, sync_state
+     (donc analyses, positions, journal, réglages, clé API chiffrée),
+     notification_tokens, subscriptions, user_offer_assignments et les
+     tables d'import CSV ;
+   - ANONYMISE les journaux d'audit au lieu de les détruire : ces traces
+     servent à la sécurité et peuvent être exigées légalement. L'identifiant
+     est remplacé par un marqueur non réversible, si bien qu'aucune donnée
+     personnelle ne subsiste tout en préservant l'intégrité des journaux.
+
+   Ce qui N'EST PAS supprimé ici, et pourquoi : l'abonnement Google Play.
+   Il est détenu par Google, pas par nous. L'utilisateur doit le résilier
+   depuis le Play Store — sans quoi il continuerait d'être débité. Le message
+   renvoyé au client le précise explicitement.
+   ========================================================================== */
+function deleteAccount(userId, password) {
+  const conn = db.get();
+  const row = conn.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+  if (!row) throw new HttpError(404, "Compte introuvable.");
+  if (!password || !verifyPassword(password, row.password_hash)) {
+    throw new HttpError(401, "Mot de passe incorrect. La suppression a été annulée.");
+  }
+  const hadSubscription = !!row.subscribed;
+  const anon = "deleted-" + sha256(userId).slice(0, 16);
+  const tx = conn.prepare ? null : null; // (node:sqlite : transactions via exec)
+  conn.exec("BEGIN");
+  try {
+    /* Anonymisation des journaux (conservés pour la sécurité). */
+    try { conn.prepare("UPDATE audit_log SET user_id = ? WHERE user_id = ?").run(anon, userId); } catch {}
+    try { conn.prepare("UPDATE csv_audit_log SET user_id = ? WHERE user_id = ?").run(anon, userId); } catch {}
+    /* Suppression du compte : les données liées partent en cascade. */
+    conn.prepare("DELETE FROM users WHERE id = ?").run(userId);
+    conn.exec("COMMIT");
+  } catch (e) {
+    try { conn.exec("ROLLBACK"); } catch {}
+    throw e;
+  }
+  return { deleted: true, hadSubscription };
+}
+
 function verifyCredentials(email, password) {
   email = normEmail(email);
   const conn = db.get();
@@ -113,4 +163,4 @@ function getUserById(id) {
 function isTrialActive(user) { return Date.now() < user.trialUntil; }
 function isPro(user) { return user.role === "admin" || user.role === "pro" || isTrialActive(user); }
 
-module.exports = { register, login, refresh, logout, getUserById, toPublicUser, isTrialActive, isPro, normEmail };
+module.exports = { register, login, refresh, logout, getUserById, toPublicUser, isTrialActive, isPro, normEmail, deleteAccount };
