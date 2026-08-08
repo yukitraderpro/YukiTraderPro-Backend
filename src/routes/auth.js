@@ -151,7 +151,10 @@ router.post("/reset-password", async ctx => {
   const user = conn.prepare("SELECT id, email FROM users WHERE id = ?").get(row.user_id);
   if (!user) throw invalid();
 
-  const tx = conn.transaction(() => {
+  /* node:sqlite n'expose pas l'API .transaction() de better-sqlite3 : on
+     encadre manuellement par BEGIN/COMMIT, comme dans authService.deleteAccount. */
+  conn.exec("BEGIN");
+  try {
     conn.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(String(password)), user.id);
     conn.prepare("UPDATE password_resets SET used_at = ? WHERE id = ?").run(Date.now(), row.id);
     /* Toutes les sessions existantes tombent : c'est le comportement attendu
@@ -159,8 +162,11 @@ router.post("/reset-password", async ctx => {
        d'un tiers qui aurait compromis le compte. */
     conn.prepare("UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
       .run(Date.now(), user.id);
-  });
-  tx();
+    conn.exec("COMMIT");
+  } catch (e) {
+    try { conn.exec("ROLLBACK"); } catch {}
+    throw e;
+  }
 
   logger.info("[auth] Mot de passe réinitialisé avec succès.");
   clearRefreshCookie(ctx);

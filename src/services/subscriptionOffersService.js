@@ -55,7 +55,11 @@ function logPriceChange(offerId, offerName, oldPriceCents, newPriceCents, change
 }
 
 function getPriceHistory(offerId) {
-  return db.get().prepare("SELECT * FROM offer_price_history WHERE offer_id = ? ORDER BY changed_at DESC").all(offerId);
+  /* Tri secondaire sur rowid : deux écritures faites dans la même milliseconde
+     (création puis modification immédiate) ont un `changed_at` identique, et
+     l'ordre devenait alors non déterministe. Le rowid, strictement croissant,
+     départage sur l'ordre réel d'insertion. */
+  return db.get().prepare("SELECT * FROM offer_price_history WHERE offer_id = ? ORDER BY changed_at DESC, rowid DESC").all(offerId);
 }
 
 function createOffer({ name, description, priceCents, seatLimit, active, sortOrder }, changedBy) {
