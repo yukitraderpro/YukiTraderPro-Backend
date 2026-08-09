@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const Router = require("../http/router");
 const authenticate = require("../middleware/authenticate");
+const requirePro = require("../middleware/requirePro");
 const db = require("../db");
 const { HttpError } = require("../http/server");
 const fcmService = require("../services/fcmService");
@@ -8,7 +9,7 @@ const logger = require("../logger");
 
 const router = new Router();
 
-router.post("/register-token", authenticate, async ctx => {
+router.post("/register-token", authenticate, requirePro, async ctx => {
   const { fcmToken, deviceId } = ctx.body || {};
   if (!fcmToken) throw new HttpError(400, "fcmToken requis.");
   const conn = db.get();
@@ -28,7 +29,7 @@ router.delete("/token/:token", authenticate, async ctx => {
 /* Envoie une notification de test à tous les appareils enregistrés de
    l'utilisateur — permet de vérifier la chaîne complète (app fermée
    comprise) sans attendre un vrai signal du scan planifié. */
-router.post("/send-test", authenticate, async ctx => {
+router.post("/send-test", authenticate, requirePro, async ctx => {
   const conn = db.get();
   const tokens = conn.prepare("SELECT fcm_token FROM notification_tokens WHERE user_id = ?").all(ctx.userId);
   if (!tokens.length) throw new HttpError(404, "Aucun appareil enregistré pour les notifications push.");

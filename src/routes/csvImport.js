@@ -8,10 +8,16 @@
    ========================================================================== */
 const Router = require("../http/router");
 const authenticate = require("../middleware/authenticate");
+const requirePro = require("../middleware/requirePro");
 const { HttpError } = require("../http/server");
 const svc = require("../services/csvImportService");
 
 const router = new Router();
+
+/* Import CSV : fonctionnalité Pro. On protège la création et la validation
+   d'imports. Les lectures (GET), l'annulation et la suppression restent
+   accessibles : un compte expiré doit pouvoir consulter et effacer ce qu'il
+   a déjà importé. */
 
 function wrap(fn) {
   return async ctx => {
@@ -20,7 +26,7 @@ function wrap(fn) {
   };
 }
 
-router.post("/imports", authenticate, wrap(async ctx => {
+router.post("/imports", authenticate, requirePro, wrap(async ctx => {
   const { filename, source, destination, csvText, mimeType } = ctx.body || {};
   const preview = svc.createImportPreview(ctx.userId, { filename, source, destination, csvText, mimeType });
   ctx.res.json(201, preview);
@@ -34,7 +40,7 @@ router.get("/imports/:id", authenticate, wrap(async ctx => {
   ctx.res.json(200, svc.getImportReport(ctx.userId, ctx.params.id));
 }));
 
-router.post("/imports/:id/confirm", authenticate, wrap(async ctx => {
+router.post("/imports/:id/confirm", authenticate, requirePro, wrap(async ctx => {
   const { mapping, duplicateStrategy } = ctx.body || {};
   const report = svc.confirmImport(ctx.userId, ctx.params.id, { mapping, duplicateStrategy });
   ctx.res.json(200, report);
@@ -56,12 +62,12 @@ router.delete("/imports/:id", authenticate, wrap(async ctx => {
   else ctx.res.json(200, svc.softDeleteImport(ctx.userId, ctx.params.id, ctx.body && ctx.body.retentionDays));
 }));
 
-router.post("/imports/:id/rows/delete", authenticate, wrap(async ctx => {
+router.post("/imports/:id/rows/delete", authenticate, requirePro, wrap(async ctx => {
   const { rowIds } = ctx.body || {};
   ctx.res.json(200, svc.softDeleteRows(ctx.userId, ctx.params.id, rowIds));
 }));
 
-router.post("/imports/:id/restore", authenticate, wrap(async ctx => {
+router.post("/imports/:id/restore", authenticate, requirePro, wrap(async ctx => {
   ctx.res.json(200, svc.restoreImport(ctx.userId, ctx.params.id));
 }));
 

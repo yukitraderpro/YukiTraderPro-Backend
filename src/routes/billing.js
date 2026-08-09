@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const Router = require("../http/router");
 const authenticate = require("../middleware/authenticate");
+const { getAccessState } = require("../middleware/requirePro");
 const db = require("../db");
 const { HttpError } = require("../http/server");
 const googlePlayService = require("../services/googlePlayService");
@@ -67,7 +68,11 @@ router.post("/verify-purchase", authenticate, async ctx => {
 router.get("/status", authenticate, async ctx => {
   const row = db.get().prepare("SELECT * FROM subscriptions WHERE user_id = ? ORDER BY verified_at DESC LIMIT 1").get(ctx.userId);
   const user = db.get().prepare("SELECT subscribed, role FROM users WHERE id = ?").get(ctx.userId);
+  /* `access` est la source de vérité côté serveur : c'est elle qui décide
+     réellement, le client ne fait que l'afficher. */
+  const access = getAccessState(ctx.userId);
   ctx.res.json(200, {
+    access,
     subscribed: !!user.subscribed,
     role: user.role,
     lastVerification: row ? { status: row.status, expiryAt: row.expiry_at, verifiedAt: row.verified_at } : null,

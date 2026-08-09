@@ -18,6 +18,7 @@
    ========================================================================== */
 const Router = require("../http/router");
 const authenticate = require("../middleware/authenticate");
+const requirePro = require("../middleware/requirePro");
 const db = require("../db");
 const { HttpError } = require("../http/server");
 
@@ -30,7 +31,10 @@ router.get("/state", authenticate, async ctx => {
   ctx.res.json(200, { state: JSON.parse(row.payload), updatedAt: row.updated_at, version: row.version });
 });
 
-router.put("/state", authenticate, async ctx => {
+/* Le PUSH est réservé aux comptes actifs : c'est l'usage du service.
+   Le GET reste ouvert — récupérer ses propres données doit rester possible
+   même après expiration (RGPD : droit d'accès). */
+router.put("/state", authenticate, requirePro, async ctx => {
   const { state } = ctx.body || {};
   if (state === undefined) throw new HttpError(400, "Champ `state` requis.");
   const serialized = JSON.stringify(state);
