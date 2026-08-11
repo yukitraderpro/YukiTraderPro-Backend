@@ -1,5 +1,6 @@
 const Router = require("../http/router");
 const authenticate = require("../middleware/authenticate");
+const rateLimit = require("../middleware/rateLimit");
 const authService = require("../services/authService");
 const { HttpError } = require("../http/server");
 const db = require("../db");
@@ -23,7 +24,7 @@ function setRefreshCookie(ctx, refreshToken) { ctx.res.setCookie(REFRESH_COOKIE,
 function clearRefreshCookie(ctx) { ctx.res.clearCookie(REFRESH_COOKIE, cookieOpts); }
 function stripRefreshToken({ refreshToken, ...rest }) { return rest; }
 
-router.post("/register", async ctx => {
+router.post("/register", rateLimit("register", 5, 60 * 60 * 1000), async ctx => {
   const { email, password, deviceId, deviceLabel, platform } = ctx.body || {};
   const user = authService.register(email, password);
   const tokens = authService.login(email, password, deviceId);
@@ -32,7 +33,7 @@ router.post("/register", async ctx => {
   ctx.res.json(201, { user, ...stripRefreshToken(tokens) });
 });
 
-router.post("/login", async ctx => {
+router.post("/login", rateLimit("login", 10, 10 * 60 * 1000), async ctx => {
   const { email, password, deviceId, deviceLabel, platform } = ctx.body || {};
   if (!email || !password) throw new HttpError(400, "E-mail et mot de passe requis.");
   const result = authService.login(email, password, deviceId);
@@ -94,7 +95,7 @@ router.post("/delete-account", authenticate, async ctx => {
 
 function hashToken(token) { return crypto.createHash("sha256").update(token).digest("hex"); }
 
-router.post("/forgot-password", async ctx => {
+router.post("/forgot-password", rateLimit("forgotPassword", 3, 60 * 60 * 1000), async ctx => {
   const { email } = ctx.body || {};
   const genericResponse = {
     ok: true,
@@ -134,7 +135,7 @@ router.post("/forgot-password", async ctx => {
   ctx.res.json(200, genericResponse);
 });
 
-router.post("/reset-password", async ctx => {
+router.post("/reset-password", rateLimit("resetPassword", 10, 60 * 60 * 1000), async ctx => {
   const { token, password } = ctx.body || {};
   if (!token || !password) throw new HttpError(400, "Jeton et nouveau mot de passe requis.");
   if (String(password).length < 6) throw new HttpError(400, "Le mot de passe doit contenir au moins 6 caractères.");
