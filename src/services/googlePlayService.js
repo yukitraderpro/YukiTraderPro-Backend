@@ -98,6 +98,42 @@ async function verifySubscription(purchaseToken, subscriptionId, httpClient = de
   return interpretSubscriptionResponse(res.json);
 }
 
+/* ==========================================================================
+   Acquittement d'un achat (purchases.subscriptions.acknowledge)
+   --------------------------------------------------------------------------
+   OBLIGATOIRE. Google exige que l'application confirme chaque achat. Un
+   abonnement resté non acquitté est AUTOMATIQUEMENT REMBOURSÉ ET RÉVOQUÉ
+   au bout de 3 jours (délai fortement raccourci pour les abonnements de
+   test). Sans cet appel, un client paie, obtient son accès, puis Google le
+   rembourse quelques jours plus tard sans le moindre message d'erreur.
+   Constaté en test le 17/08/2026 : Play affichait « Confirmez le forfait /
+   Ouvrez cette appli pour confirmer votre forfait avant… ».
+
+   L'appel est idempotent côté Google : acquitter un achat déjà acquitté
+   renvoie une erreur bénigne (409/400) qu'on traite comme un succès.
+   Référence : androidpublisher v3, endpoint :acknowledge. */
+async function acknowledgeSubscription(purchaseToken, subscriptionId, httpClient = defaultHttpClient) {
+  const { packageName } = config.googlePlay;
+  if (!packageName) throw new Error("GOOGLE_PLAY_PACKAGE_NAME non configuré.");
+  const accessToken = await getAccessToken(httpClient);
+  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptions/${encodeURIComponent(subscriptionId)}/tokens/${encodeURIComponent(purchaseToken)}:acknowledge`;
+  const res = await httpClient({
+    method: "POST",
+    url,
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: "{}"
+  });
+  /* 200/204 : acquitté. 400/409 : déjà acquitté (Google ne fournit pas de
+     code dédié) — sans gravité, l'objectif est atteint dans les deux cas. */
+  if (res.status === 200 || res.status === 204) return { acknowledged: true, alreadyAcknowledged: false };
+  if (res.status === 400 || res.status === 409) {
+    logger.info("Achat déjà acquitté auprès de Google Play", { status: res.status });
+    return { acknowledged: true, alreadyAcknowledged: true };
+  }
+  logger.warn("Acquittement Google Play échoué", { status: res.status });
+  return { acknowledged: false, status: res.status };
+}
+
 /* Traduit la réponse brute de Google en un statut applicatif simple.
    Référence : champ `paymentState` (0=en attente, 1=payé, 2=essai gratuit,
    3=en attente de report) et `expiryTimeMillis`. */
@@ -111,4 +147,4 @@ function interpretSubscriptionResponse(raw) {
   return { status, expiryAt, autoRenewing: !!raw.autoRenewing, raw };
 }
 
-module.exports = { verifySubscription, getAccessToken, interpretSubscriptionResponse, defaultHttpClient };
+module.exports = { verifySubscription, acknowledgeSubscription, getAccessToken, interpretSubscriptionResponse, defaultHttpClient };

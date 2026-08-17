@@ -458,6 +458,77 @@ function walkForwardBacktest(values, analyseFn, opts = {}) {
 }
 
 /* ==========================================================================
+   Avantage réel sur le hasard (V4.11)
+   --------------------------------------------------------------------------
+   Un taux de réussite brut ne veut rien dire tant qu'on ne le compare pas au
+   taux que produirait le pur hasard. Avec un objectif placé à `m` fois la
+   distance du stop, une marche aléatoire touche l'objectif avant le stop
+   dans 1/(1+m) des cas : 43,5 % pour un objectif à 1,3x, 33,3 % à 2x,
+   31,3 % à 2,2x. Autrement dit « 45 % de réussite » est excellent avec un
+   objectif à 2x et médiocre avec un objectif à 1,3x — le taux seul ne dit
+   rien, c'est l'ÉCART au hasard qui mesure la qualité du signal.
+   Ces fonctions rendent la comparaison explicite et empêchent de présenter
+   un taux flatteur comme une performance.
+   ========================================================================== */
+function chanceWinRate(targetMultiple) {
+  if (!Number.isFinite(targetMultiple) || targetMultiple <= 0) return null;
+  return 1 / (1 + targetMultiple);
+}
+
+function edgeOverChance(wins, total, targetMultiple, z = 1.96) {
+  const w = wilsonInterval(wins, total, z);
+  const chance = chanceWinRate(targetMultiple);
+  if (!w || chance === null) return null;
+  const chancePct = chance * 100;
+  return {
+    rate: w.rate, low: w.low, high: w.high, sample: w.sample,
+    chance: Math.round(chancePct * 10) / 10,
+    edgePoints: Math.round((w.rate - chancePct) * 10) / 10,
+    /* L'avantage n'est démontré que si la BORNE BASSE de l'intervalle de
+       confiance dépasse déjà le hasard. Sinon le taux observé reste
+       compatible avec l'absence totale d'avantage, et il ne faut pas
+       l'annoncer comme une performance. */
+    proven: w.low > chancePct
+  };
+}
+
+/* ==========================================================================
+   Évaluation d'un signal sur ses VRAIES bornes (V4.11)
+   --------------------------------------------------------------------------
+   `evaluateSignal` ci-dessous juge un signal sur un mouvement symétrique de
+   ±minMovePct à horizon fixe. C'est une convention défendable, mais elle ne
+   correspond PAS au stop et à l'objectif affichés à l'utilisateur : un
+   « gagnant » à +0,4 % peut très bien n'avoir jamais touché un objectif
+   placé à +4 %. Le taux de réussite affiché mesure alors autre chose que ce
+   que vivrait quelqu'un qui suit les niveaux de l'application.
+   Cette fonction rejoue les bougies suivantes et regarde laquelle des deux
+   bornes est touchée en premier — le même verdict que sur un compte réel.
+   ========================================================================== */
+function evaluateSignalBarriers(signal, entry, stop, target, futureCandles) {
+  if (signal !== "ACHETER" && signal !== "VENDRE") return "sans_objet";
+  if (![entry, stop, target].every(Number.isFinite)) return "sans_objet";
+  if (!Array.isArray(futureCandles) || !futureCandles.length) return "sans_objet";
+  const isBuy = signal === "ACHETER";
+  if (isBuy && !(stop < entry && target > entry)) return "sans_objet";
+  if (!isBuy && !(stop > entry && target < entry)) return "sans_objet";
+  for (const c of futureCandles) {
+    if (!c) continue;
+    const high = Number.isFinite(c.high) ? c.high : c.close;
+    const low = Number.isFinite(c.low) ? c.low : c.close;
+    if (!Number.isFinite(high) || !Number.isFinite(low)) continue;
+    const hitTarget = isBuy ? high >= target : low <= target;
+    const hitStop = isBuy ? low <= stop : high >= stop;
+    /* Si une même bougie touche les deux bornes, l'ordre est indéterminé
+       sans données infra-bougie : on compte la perte. Toute autre
+       convention embellirait le résultat sans preuve. */
+    if (hitStop && hitTarget) return "perdant";
+    if (hitTarget) return "gagnant";
+    if (hitStop) return "perdant";
+  }
+  return "neutre";
+}
+
+/* ==========================================================================
    Confluence multi-indicateurs
    --------------------------------------------------------------------------
    Combine tous les indicateurs ci-dessus en un score, un nombre de votes
@@ -724,11 +795,14 @@ function updateIndicatorWeights(weights, votes, signal, outcome) {
 function buildCopilotBrief(r) {
   const name = r.item ? r.item.name : "cet instrument";
   const conf = r.confidence, grade = r.quality;
-  const sideText = r.signal === "ACHETER" ? "un achat" : r.signal === "VENDRE" ? "une vente" : "d'attendre";
+  /* Formulation descriptive : on décrit la tendance lue par les indicateurs,
+     on ne suggère pas une action à l'utilisateur (cf. déclaration Play sur
+     les fonctionnalités financières). */
+  const sideText = r.signal === "ACHETER" ? "une lecture haussière" : r.signal === "VENDRE" ? "une lecture baissière" : "l'attente";
   let opening;
   if (r.insufficientData) opening = `Sur ${name}, l'historique disponible est trop court ou trop incomplet pour calculer une confiance fiable : confiance insuffisante. Yuki préfère ne rien affirmer plutôt que d'inventer une justification.`;
   else if (r.signal === "ATTENDRE") opening = `Sur ${name}, Yuki ne voit pas de configuration assez nette pour se positionner : mieux vaut attendre.`;
-  else opening = `Sur ${name}, la confluence des indicateurs penche pour ${sideText}, avec une confiance de ${conf}% (note ${grade}).`;
+  else opening = `Sur ${name}, la confluence des indicateurs donne ${sideText}, avec une confiance de ${conf}% (note ${grade}).`;
 
   const strong = (r.reasons || []).filter(x => !/proche|faible|prudence|contraire|neutralis|dans le nuage|contradictoires/i.test(x)).slice(0, 3);
   const caveats = (r.reasons || []).filter(x => /proche|faible|prudence|contraire|neutralis|dans le nuage|contradictoires/i.test(x));
@@ -776,11 +850,13 @@ function buildSimpleAiBrief(r, lang) {
         suggestion: "Suggestion: don't take a position for now, check back a bit later."
       };
     }
-    const sideText = r.signal === "ACHETER" ? "a buy" : r.signal === "VENDRE" ? "a sell" : "waiting";
+    /* Descriptive wording: we report the trend read by the indicators, we do
+       not suggest an action (see Play financial-features declaration). */
+    const sideText = r.signal === "ACHETER" ? "a bullish reading" : r.signal === "VENDRE" ? "a bearish reading" : "waiting";
     const riskWord = (riskWordEn[r.risk] || (r.risk || "moderate").toLowerCase());
     const summary = r.signal === "ATTENDRE"
       ? `On ${name}, Yuki doesn't see a clear enough setup to take a position: better to wait. Current confidence: ${r.confidence}%.`
-      : `On ${name}, Yuki leans toward ${sideText} with ${r.confidence}% confidence. The estimated risk level is ${riskWord}.`;
+      : `On ${name}, Yuki reports ${sideText} with ${r.confidence}% confidence. The estimated risk level is ${riskWord}.`;
     let suggestion;
     if (r.signal === "ATTENDRE") {
       suggestion = "Suggestion: stay out of the market for now, no decision is needed.";
@@ -796,10 +872,13 @@ function buildSimpleAiBrief(r, lang) {
       suggestion: "Suggestion : ne prends pas position pour l'instant, réessaie un peu plus tard."
     };
   }
-  const sideText = r.signal === "ACHETER" ? "un achat" : r.signal === "VENDRE" ? "une vente" : "d'attendre";
+  /* Formulation descriptive : on décrit la tendance lue par les indicateurs,
+     on ne suggère pas une action à l'utilisateur (cf. déclaration Play sur
+     les fonctionnalités financières). */
+  const sideText = r.signal === "ACHETER" ? "une lecture haussière" : r.signal === "VENDRE" ? "une lecture baissière" : "l'attente";
   const summary = r.signal === "ATTENDRE"
     ? `Sur ${name}, Yuki ne voit pas de configuration assez nette pour se positionner : mieux vaut attendre. Confiance actuelle : ${r.confidence}%.`
-    : `Sur ${name}, Yuki penche pour ${sideText} avec une confiance de ${r.confidence}%. Le niveau de risque estimé est ${(r.risk || "modéré").toLowerCase()}.`;
+    : `Sur ${name}, Yuki relève ${sideText} avec une confiance de ${r.confidence}%. Le niveau de risque estimé est ${(r.risk || "modéré").toLowerCase()}.`;
 
   let suggestion;
   if (r.signal === "ATTENDRE") {
@@ -848,6 +927,7 @@ if (typeof module !== "undefined" && module.exports) {
     clampWeight, WEIGHT_MIN, WEIGHT_MAX, WEIGHT_STEP, INDICATOR_NAMES,
     detectMarketRegime, regimeMultiplier, rsiSeriesCalc, detectRsiDivergence,
     wilsonInterval, walkForwardBacktest,
+    chanceWinRate, edgeOverChance, evaluateSignalBarriers,
     REGIME_TREND_FOLLOWERS, REGIME_MEAN_REVERTERS
   };
 }

@@ -41,6 +41,24 @@ router.post("/verify-purchase", authenticate, async ctx => {
     throw new HttpError(502, "Impossible de vérifier l'achat auprès de Google Play pour le moment.");
   }
 
+  /* Acquittement IMMÉDIAT (V4.13.3). À faire dès que l'abonnement est
+     actif, avant toute autre écriture : un achat non acquitté est remboursé
+     et révoqué par Google au bout de 3 jours. On n'interrompt pas la requête
+     si l'acquittement échoue — l'utilisateur a payé, il doit obtenir son
+     accès — mais on le journalise en erreur pour pouvoir le rattraper. */
+  if (result.status === "active" || result.status === "pending") {
+    try {
+      const ack = await googlePlayService.acknowledgeSubscription(purchaseToken, subscriptionId);
+      if (!ack.acknowledged) {
+        logger.error("ACQUITTEMENT NON CONFIRMÉ — risque de remboursement automatique sous 3 jours", {
+          userId: ctx.userId, subscriptionId, status: ack.status
+        });
+      }
+    } catch (e) {
+      logger.error("Erreur d'acquittement Google Play", { error: e.message, userId: ctx.userId, subscriptionId });
+    }
+  }
+
   const conn = db.get();
   const now = Date.now();
   conn.prepare(`
