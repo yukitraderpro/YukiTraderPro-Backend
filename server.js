@@ -7,8 +7,22 @@ const buildApp = require("./src/app");
 const backupService = require("./src/services/backupService");
 const scheduledScan = require("./src/jobs/scheduledScan");
 const csvImportService = require("./src/services/csvImportService");
+const adminBootstrap = require("./src/services/adminBootstrap");
 
 db.open();
+
+/* Promotion des administrateurs désignés — après l'ouverture de la base,
+   avant que le serveur n'accepte des requêtes. Un échec ici ne doit jamais
+   empêcher le démarrage : mieux vaut une application debout sans admin
+   qu'une application à terre. */
+try {
+  /* Toujours journaliser : un silence ne doit plus pouvoir signifier
+     « code non déployé » aussi bien que « tout va bien ». */
+  logger.info("Amorçage administrateurs", adminBootstrap.bootstrapAdmins());
+} catch (e) {
+  logger.error("Amorçage administrateurs impossible", { error: e.message });
+}
+
 const app = buildApp();
 
 const server = app.listen(config.port, config.host, () => {

@@ -77,7 +77,17 @@ const config = {
   scheduledScan: {
     enabled: required("SCHEDULED_SCAN_ENABLED", "false") === "true",
     intervalMinutes: parseInt(required("SCHEDULED_SCAN_INTERVAL_MINUTES", "15"), 10)
-  }
+  },
+
+  /* Administrateurs désignés par l'environnement.
+     Jusqu'ici, le rôle « admin » ne pouvait s'obtenir que par la route
+     PUT /api/admin/users/:id/role — laquelle exige d'être DÉJÀ administrateur.
+     Le système était donc circulaire : aucun moyen de créer le premier, ni de
+     retrouver l'accès après une restauration de sauvegarde.
+     On désigne ces comptes ici, en dehors du code et de la base. Plusieurs
+     adresses possibles, séparées par des virgules. */
+  adminEmails: required("ADMIN_EMAIL", "")
+    .split(",").map(e => e.trim().toLowerCase()).filter(Boolean)
 };
 
 module.exports = config;
