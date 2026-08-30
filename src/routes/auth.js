@@ -109,7 +109,10 @@ router.post("/forgot-password", rateLimit("forgotPassword", 3, 60 * 60 * 1000), 
 
   const normalized = authService.normEmail(email);
   const conn = db.get();
-  const user = conn.prepare("SELECT id, email FROM users WHERE email = ?").get(normalized);
+  /* Insensible à la casse au niveau SQL : les comptes créés avant la
+     normalisation de l'inscription peuvent porter des majuscules en base
+     (clavier mobile), et l'amorçage admin les accepte déjà ainsi. */
+  const user = conn.prepare("SELECT id, email FROM users WHERE lower(email) = ?").get(normalized);
 
   if (!user) {
     /* Compte inexistant : on répond exactement comme en cas de succès. */

@@ -1,0 +1,25 @@
+{"time":"2026-08-30T20:28:40.254Z","level":"info","message":"Base de données ouverte","dbPath":"/tmp/yuki-admin-6r6qZ9/test.sqlite"}
+{"time":"2026-08-30T20:28:40.256Z","level":"info","message":"ADMIN_EMAIL renseignée","adresses":["chef@exemple.fr","absent@exemple.fr"]}
+{"time":"2026-08-30T20:28:40.256Z","level":"info","message":"Compte promu administrateur au démarrage","email":"chef@exemple.fr","ancienRole":"free"}
+{"time":"2026-08-30T20:28:40.257Z","level":"info","message":"Administrateurs en base","nombre":2,"adresses":["chef@exemple.fr","deja@exemple.fr"]}
+{"time":"2026-08-30T20:28:40.257Z","level":"warn","message":"ADMIN_EMAIL désigne des comptes inexistants — crée-les dans l'application, puis redémarre le service","adresses":["absent@exemple.fr"]}
+{"time":"2026-08-30T20:28:40.258Z","level":"info","message":"ADMIN_EMAIL renseignée","adresses":["chef@exemple.fr","absent@exemple.fr"]}
+{"time":"2026-08-30T20:28:40.259Z","level":"info","message":"Administrateurs en base","nombre":2,"adresses":["chef@exemple.fr","deja@exemple.fr"]}
+{"time":"2026-08-30T20:28:40.259Z","level":"warn","message":"ADMIN_EMAIL désigne des comptes inexistants — crée-les dans l'application, puis redémarre le service","adresses":["absent@exemple.fr"]}
+{"time":"2026-08-30T20:28:40.259Z","level":"warn","message":"ADMIN_EMAIL non renseignée — aucune promotion automatique. Pour désigner un administrateur, ajoute cette variable dans l'environnement du service."}
+{"time":"2026-08-30T20:28:40.259Z","level":"info","message":"Administrateurs en base","nombre":2,"adresses":["chef@exemple.fr","deja@exemple.fr"]}
+{"time":"2026-08-30T20:28:40.586Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-tKzgC6/backups/yuki-20260830-202840.sqlite"}
+{"time":"2026-08-30T20:28:40.586Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-tKzgC6/inexistant.sqlite"}
+{"time":"2026-08-30T20:28:40.587Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-08-30T20:28:40.587Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-08-30T20:28:41.196Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-08-30T20:28:41.913Z","level":"info","message":"Achat déjà acquitté auprès de Google Play","status":400}
+{"time":"2026-08-30T20:28:41.914Z","level":"info","message":"Achat déjà acquitté auprès de Google Play","status":409}
+{"time":"2026-08-30T20:28:41.917Z","level":"warn","message":"Acquittement Google Play échoué","status":500}
+{"time":"2026-08-30T20:28:42.017Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}
+{"time":"2026-08-30T20:28:42.793Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-08-30T20:28:43.098Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_block"}
+{"time":"2026-08-30T20:28:43.099Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_iso"}
+{"time":"2026-08-30T20:28:43.099Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_login"}
+{"time":"2026-08-30T20:28:43.100Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_window"}
+{"time":"2026-08-30T20:28:43.201Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
