@@ -138,6 +138,15 @@ function migrate() {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS co_movement (
+      mover TEXT NOT NULL,
+      linked TEXT NOT NULL,
+      corr REAL NOT NULL,
+      agreement REAL NOT NULL,
+      n INTEGER NOT NULL,
+      computed_at INTEGER NOT NULL,
+      PRIMARY KEY (mover, linked)
+    );
     CREATE TABLE IF NOT EXISTS csv_imports (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -6,6 +6,7 @@ const logger = require("./src/logger");
 const buildApp = require("./src/app");
 const backupService = require("./src/services/backupService");
 const scheduledScan = require("./src/jobs/scheduledScan");
+const coMovementJob = require("./src/jobs/coMovementJob");
 const csvImportService = require("./src/services/csvImportService");
 const adminBootstrap = require("./src/services/adminBootstrap");
 
@@ -31,6 +32,7 @@ const server = app.listen(config.port, config.host, () => {
 
 const backupTimer = backupService.schedule();
 const scanTimer = config.scheduledScan.enabled ? scheduledScan.schedule() : null;
+const coMovementTimer = coMovementJob.schedule();
 const csvPurgeTimer = setInterval(() => {
   try { const r = csvImportService.purgeExpired(); if (r.purged) logger.info("Purge CSV expirés", r); }
   catch (e) { logger.error("Erreur purge CSV", { error: e.message }); }
@@ -40,6 +42,7 @@ function shutdown(signal) {
   logger.info("Arrêt du serveur", { signal });
   clearInterval(backupTimer);
   if (scanTimer) clearInterval(scanTimer);
+  if (coMovementTimer) clearInterval(coMovementTimer);
   clearInterval(csvPurgeTimer);
   server.close(() => { db.close(); process.exit(0); });
   setTimeout(() => process.exit(1), 5000).unref();

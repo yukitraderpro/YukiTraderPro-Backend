@@ -74,6 +74,15 @@ const config = {
 
   // Clé Twelve Data utilisée UNIQUEMENT par le job planifié optionnel
   // (scan côté serveur pour notifications app fermée). Voir jobs/scheduledScan.js.
+  /* « Ondes de choc » : clé de données SERVEUR pour le co-mouvement nocturne
+     (séries journalières — formule gratuite suffisante). Sans clé, la tâche
+     est désactivée et l'application se replie sur la carte curatée. */
+  context: {
+    apiKey: required("CONTEXT_DATA_KEY", ""),
+    enabled: required("CO_MOVEMENT_ENABLED", "true") === "true",
+    delayMs: parseInt(required("CO_MOVEMENT_DELAY_MS", "8000"), 10)
+  },
+
   scheduledScan: {
     enabled: required("SCHEDULED_SCAN_ENABLED", "false") === "true",
     intervalMinutes: parseInt(required("SCHEDULED_SCAN_INTERVAL_MINUTES", "15"), 10)
