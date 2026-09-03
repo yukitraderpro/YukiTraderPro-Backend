@@ -12,6 +12,7 @@ function fakeTwelve({ fail } = {}) {
     if (fail && fail(calls.length)) return { ok: true, status: 200, json: async () => ({ status: "error", code: 429, message: "You have run out of API credits for the current minute." }) };
     const sym = decodeURIComponent(url.match(/symbol=([^&]+)/)[1]);
     if (url.includes("/price?")) return { ok: true, status: 200, json: async () => ({ price: "119.69" }) };
+    if (url.includes("/symbol_search?")) return { ok: true, status: 200, json: async () => ({ data: [{ symbol: "NVDA", instrument_name: "NVIDIA" }], status: "ok" }) };
     return { ok: true, status: 200, json: async () => ({ meta: { symbol: sym }, values: [{ datetime: "2026-09-03 15:30:00", close: "119.5" }], status: "ok" }) };
   };
   return { calls, fetchImpl };
@@ -128,4 +129,28 @@ test("la route est montée sous /api/market et la config lit MARKET_DATA_KEY pui
   const route = fs.readFileSync(path.join(__dirname, "..", "src", "routes", "market.js"), "utf8");
   assert.ok(route.includes('router.get("/series", authenticate') && route.includes('router.get("/price", authenticate'), "les données exigent un compte");
   assert.ok(route.includes('router.get("/status"'), "le statut est public");
+});
+
+test("BACKEND_7 — la place de cotation fait partie de la clé de cache : MC (Euronext) et MC (sans place) sont deux instruments", async () => {
+  const td = fakeTwelve();
+  const m = createMarketData({ apiKey: "K", fetchImpl: td.fetchImpl });
+  await m.series({ symbol: "MC", interval: "15min", exchange: "EURONEXT" });
+  await m.series({ symbol: "MC", interval: "15min" });
+  await m.series({ symbol: "MC", interval: "15min", exchange: "EURONEXT" });
+  assert.strictEqual(td.calls.length, 2, "deux clés de cache, deux appels, pas trois");
+  assert.ok(td.calls[0].includes("exchange=EURONEXT"));
+  await assert.rejects(() => m.series({ symbol: "MC", interval: "15min", exchange: "EURO NEXT;" }), e => e.status === 400);
+});
+
+test("BACKEND_7 — recherche d'actif par le serveur : une heure de cache par requête, entrée contrôlée ; l'historique long terme peut demander 1 100 bougies", async () => {
+  const td = fakeTwelve(), c = clock();
+  const m = createMarketData({ apiKey: "K", fetchImpl: td.fetchImpl, now: c.now });
+  await m.search({ query: "nvid" }); await m.search({ query: "NVID" }); await m.search({ query: "nvid " });
+  assert.strictEqual(td.calls.length, 1, "trois graphies, une seule requête");
+  await assert.rejects(() => m.search({ query: "n" }), e => e.status === 400);
+  await assert.rejects(() => m.search({ query: "<script>" }), e => e.status === 400);
+  await m.series({ symbol: "MC", interval: "1week", outputsize: 1100, exchange: "EURONEXT" });
+  assert.ok(td.calls.some(u => /outputsize=1100/.test(u)), "1 100 semaines acceptées (21 ans)");
+  const route = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src", "routes", "market.js"), "utf8");
+  assert.ok(route.includes('router.get("/search", authenticate'));
 });

@@ -33,7 +33,7 @@ router.get("/series", authenticate, async ctx => {
   try {
     const access = getAccessState(ctx.userId);
     const q = await market.consume(ctx.userId, access);
-    const data = await market.series({ symbol: ctx.query.symbol, interval: ctx.query.interval, outputsize: ctx.query.outputsize });
+    const data = await market.series({ symbol: ctx.query.symbol, interval: ctx.query.interval, outputsize: ctx.query.outputsize, exchange: ctx.query.exchange });
     ctx.res.json(200, { ...data, quota_yuki: { tier: q.tier, remainingDay: q.remainingDay === Infinity ? null : q.remainingDay } });
   } catch (e) { throw translate(e); }
 });
@@ -42,7 +42,16 @@ router.get("/price", authenticate, async ctx => {
   try {
     const access = getAccessState(ctx.userId);
     const q = await market.consume(ctx.userId, access);
-    const data = await market.price({ symbol: ctx.query.symbol });
+    const data = await market.price({ symbol: ctx.query.symbol, exchange: ctx.query.exchange });
+    ctx.res.json(200, { ...data, quota_yuki: { tier: q.tier, remainingDay: q.remainingDay === Infinity ? null : q.remainingDay } });
+  } catch (e) { throw translate(e); }
+});
+
+router.get("/search", authenticate, async ctx => {
+  try {
+    const access = getAccessState(ctx.userId);
+    const q = await market.consume(ctx.userId, access);
+    const data = await market.search({ query: ctx.query.symbol, outputsize: ctx.query.outputsize });
     ctx.res.json(200, { ...data, quota_yuki: { tier: q.tier, remainingDay: q.remainingDay === Infinity ? null : q.remainingDay } });
   } catch (e) { throw translate(e); }
 });

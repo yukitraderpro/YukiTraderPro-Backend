@@ -102,22 +102,42 @@ function createMarketData({ apiKey, fetchImpl, now = () => Date.now(), quotaStor
   const SYMBOL_RE = /^[A-Z0-9.\-\/:_]{1,20}$/i;
   function checkSymbol(symbol) { if (!SYMBOL_RE.test(String(symbol || ""))) throw new MarketDataError(400, "Symbole invalide."); return String(symbol).toUpperCase(); }
 
-  async function series({ symbol, interval, outputsize }) {
+  /* BACKEND_7 — `exchange` facultatif : « MC » sans place, c'est Moelis à
+     New York ; avec EURONEXT, c'est LVMH. La place fait partie de la clé
+     de cache. */
+  const EXCHANGE_RE = /^[A-Z0-9_\-]{2,16}$/i;
+  function checkExchange(exchange) { if (exchange === undefined || exchange === null || exchange === "") return ""; if (!EXCHANGE_RE.test(String(exchange))) throw new MarketDataError(400, "Place de cotation invalide."); return String(exchange).toUpperCase(); }
+
+  async function series({ symbol, interval, outputsize, exchange }) {
     if (!configured()) throw new MarketDataError(503, "Données de marché non configurées sur le serveur.", { code: "not_configured" });
-    const sym = checkSymbol(symbol);
+    const sym = checkSymbol(symbol), exch = checkExchange(exchange);
     const itv = TTL_MS[interval] ? interval : null;
     if (!itv) throw new MarketDataError(400, "Intervalle non pris en charge.");
-    const size = Math.max(30, Math.min(500, parseInt(outputsize, 10) || 120));
-    const key = `series|${sym}|${itv}|${size}`;
-    const r = await getCached(key, TTL_MS[itv], 1, () => "https://api.twelvedata.com/time_series?symbol=" + encodeURIComponent(sym) + "&interval=" + itv + "&outputsize=" + size + "&order=asc&apikey=" + encodeURIComponent(apiKey));
+    /* Jusqu'à 1 200 bougies : l'analyse Long terme demande 1 100 semaines (21 ans). */
+    const size = Math.max(30, Math.min(1200, parseInt(outputsize, 10) || 120));
+    const key = `series|${sym}|${exch}|${itv}|${size}`;
+    const r = await getCached(key, TTL_MS[itv], 1, () => "https://api.twelvedata.com/time_series?symbol=" + encodeURIComponent(sym) + (exch ? "&exchange=" + encodeURIComponent(exch) : "") + "&interval=" + itv + "&outputsize=" + size + "&order=asc&apikey=" + encodeURIComponent(apiKey));
     return { ...r.payload, meta_yuki: { fetchedAt: r.fetchedAt, ageMs: now() - r.fetchedAt, source: r.source, reason: r.reason || null } };
   }
 
-  async function price({ symbol }) {
+  async function price({ symbol, exchange }) {
     if (!configured()) throw new MarketDataError(503, "Données de marché non configurées sur le serveur.", { code: "not_configured" });
-    const sym = checkSymbol(symbol);
-    const key = `price|${sym}`;
-    const r = await getCached(key, PRICE_TTL_MS, 1, () => "https://api.twelvedata.com/price?symbol=" + encodeURIComponent(sym) + "&apikey=" + encodeURIComponent(apiKey));
+    const sym = checkSymbol(symbol), exch = checkExchange(exchange);
+    const key = `price|${sym}|${exch}`;
+    const r = await getCached(key, PRICE_TTL_MS, 1, () => "https://api.twelvedata.com/price?symbol=" + encodeURIComponent(sym) + (exch ? "&exchange=" + encodeURIComponent(exch) : "") + "&apikey=" + encodeURIComponent(apiKey));
+    return { ...r.payload, meta_yuki: { fetchedAt: r.fetchedAt, ageMs: now() - r.fetchedAt, source: r.source, reason: r.reason || null } };
+  }
+
+  /* Recherche d'un symbole (écran « Rechercher un actif ») : une heure de
+     cache par requête normalisée — une recherche « nvid » vaut pour tous. */
+  const SEARCH_TTL_MS = 3600000;
+  async function search({ query, outputsize }) {
+    if (!configured()) throw new MarketDataError(503, "Données de marché non configurées sur le serveur.", { code: "not_configured" });
+    const q = String(query || "").trim().slice(0, 40);
+    if (q.length < 2 || !/^[\p{L}\p{N} .&'\-\/]+$/u.test(q)) throw new MarketDataError(400, "Recherche invalide (2 caractères minimum).");
+    const size = Math.max(5, Math.min(50, parseInt(outputsize, 10) || 30));
+    const key = `search|${q.toLowerCase()}|${size}`;
+    const r = await getCached(key, SEARCH_TTL_MS, 1, () => "https://api.twelvedata.com/symbol_search?symbol=" + encodeURIComponent(q) + "&outputsize=" + size + "&apikey=" + encodeURIComponent(apiKey));
     return { ...r.payload, meta_yuki: { fetchedAt: r.fetchedAt, ageMs: now() - r.fetchedAt, source: r.source, reason: r.reason || null } };
   }
 
@@ -142,7 +162,7 @@ function createMarketData({ apiKey, fetchImpl, now = () => Date.now(), quotaStor
   function status() { touchMinute(); return { configured: configured(), cacheEntries: cache.size, inFlight: inFlight.size, ...stats }; }
   function _clear() { cache.clear(); inFlight.clear(); }
 
-  return { series, price, consume, status, configured, tierOf, _clear, MarketDataError, TTL_MS, DEFAULT_LIMITS };
+  return { series, price, search, consume, status, configured, tierOf, _clear, MarketDataError, TTL_MS, DEFAULT_LIMITS };
 }
 
 /* Magasin de quotas SQLite — même interface que la future version Redis :
