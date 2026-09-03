@@ -83,6 +83,15 @@ const config = {
     delayMs: parseInt(required("CO_MOVEMENT_DELAY_MS", "8000"), 10)
   },
 
+  /* BACKEND_6 — données de marché servies par le serveur : UNE clé Twelve
+     Data (plan Business) pour tous les utilisateurs. À défaut, on réutilise
+     la clé du co-mouvement nocturne (même compte, même plan). Sans clé, la
+     route répond 503 « non configurée » et l'app se replie sur les clés
+     personnelles. */
+  market: {
+    apiKey: required("MARKET_DATA_KEY", "") || required("CONTEXT_DATA_KEY", "")
+  },
+
   scheduledScan: {
     enabled: required("SCHEDULED_SCAN_ENABLED", "false") === "true",
     intervalMinutes: parseInt(required("SCHEDULED_SCAN_INTERVAL_MINUTES", "15"), 10)

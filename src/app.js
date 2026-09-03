@@ -7,6 +7,7 @@ const healthRoutes = require("./routes/health");
 const adminRoutes = require("./routes/admin");
 const csvImportRoutes = require("./routes/csvImport");
 const contextRoutes = require("./routes/context");
+const marketRoutes = require("./routes/market");
 const waitlistRoutes = require("./routes/waitlist");
 
 function buildApp() {
@@ -19,6 +20,7 @@ function buildApp() {
   app.use("/api/csv", csvImportRoutes);
   app.use("/api/waitlist", waitlistRoutes);
   app.use("/api/context", contextRoutes);
+  app.use("/api/market", marketRoutes);
   app.use("/api", healthRoutes);
   return app;
 }
