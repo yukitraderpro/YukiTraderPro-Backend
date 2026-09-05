@@ -141,6 +141,20 @@ function createMarketData({ apiKey, fetchImpl, now = () => Date.now(), quotaStor
     return { ...r.payload, meta_yuki: { fetchedAt: r.fetchedAt, ageMs: now() - r.fetchedAt, source: r.source, reason: r.reason || null } };
   }
 
+  /* BACKEND_8 — dates de résultats (fondamentaux, plan Business). Un appel par
+     action et par jour : la prochaine publication ne change pas d'une
+     minute à l'autre. Fenêtre : d'aujourd'hui à +60 jours. */
+  const EARNINGS_TTL_MS = 24 * 3600000;
+  async function earnings({ symbol, exchange }) {
+    if (!configured()) throw new MarketDataError(503, "Données de marché non configurées sur le serveur.", { code: "not_configured" });
+    const sym = checkSymbol(symbol), exch = checkExchange(exchange);
+    const d0 = new Date(now()), d1 = new Date(now() + 60 * 86400000);
+    const iso = d => d.toISOString().slice(0, 10);
+    const key = `earnings|${sym}|${exch}|${iso(d0)}`;
+    const r = await getCached(key, EARNINGS_TTL_MS, 1, () => "https://api.twelvedata.com/earnings?symbol=" + encodeURIComponent(sym) + (exch ? "&exchange=" + encodeURIComponent(exch) : "") + "&start_date=" + iso(d0) + "&end_date=" + iso(d1) + "&apikey=" + encodeURIComponent(apiKey));
+    return { ...r.payload, meta_yuki: { fetchedAt: r.fetchedAt, ageMs: now() - r.fetchedAt, source: r.source, reason: r.reason || null } };
+  }
+
   /* ---- quotas par utilisateur (magasin externe) ---- */
   function tierOf(access) {
     if (!access) return "free";
@@ -162,7 +176,7 @@ function createMarketData({ apiKey, fetchImpl, now = () => Date.now(), quotaStor
   function status() { touchMinute(); return { configured: configured(), cacheEntries: cache.size, inFlight: inFlight.size, ...stats }; }
   function _clear() { cache.clear(); inFlight.clear(); }
 
-  return { series, price, search, consume, status, configured, tierOf, _clear, MarketDataError, TTL_MS, DEFAULT_LIMITS };
+  return { series, price, search, earnings, consume, status, configured, tierOf, _clear, MarketDataError, TTL_MS, DEFAULT_LIMITS };
 }
 
 /* Magasin de quotas SQLite — même interface que la future version Redis :

@@ -12,6 +12,7 @@ function fakeTwelve({ fail } = {}) {
     if (fail && fail(calls.length)) return { ok: true, status: 200, json: async () => ({ status: "error", code: 429, message: "You have run out of API credits for the current minute." }) };
     const sym = decodeURIComponent(url.match(/symbol=([^&]+)/)[1]);
     if (url.includes("/price?")) return { ok: true, status: 200, json: async () => ({ price: "119.69" }) };
+    if (url.includes("/earnings?")) return { ok: true, status: 200, json: async () => ({ meta: { symbol: "NVDA" }, earnings: [{ date: "2026-09-10", time: "After Hours", eps_estimate: 1.2, eps_actual: null }], status: "ok" }) };
     if (url.includes("/symbol_search?")) return { ok: true, status: 200, json: async () => ({ data: [{ symbol: "NVDA", instrument_name: "NVIDIA" }], status: "ok" }) };
     return { ok: true, status: 200, json: async () => ({ meta: { symbol: sym }, values: [{ datetime: "2026-09-03 15:30:00", close: "119.5" }], status: "ok" }) };
   };
@@ -153,4 +154,18 @@ test("BACKEND_7 — recherche d'actif par le serveur : une heure de cache par re
   assert.ok(td.calls.some(u => /outputsize=1100/.test(u)), "1 100 semaines acceptées (21 ans)");
   const route = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src", "routes", "market.js"), "utf8");
   assert.ok(route.includes('router.get("/search", authenticate'));
+});
+
+test("BACKEND_8 — dates de résultats : un appel par action et par jour, fenêtre d'aujourd'hui à +60 jours, route protégée", async () => {
+  const td = fakeTwelve(), c = clock();
+  const m = createMarketData({ apiKey: "K", fetchImpl: td.fetchImpl, now: c.now });
+  const r = await m.earnings({ symbol: "NVDA" });
+  assert.strictEqual(r.earnings[0].date, "2026-09-10");
+  for (let i = 0; i < 500; i++) { c.advance(60000); await m.earnings({ symbol: "NVDA" }); }
+  assert.strictEqual(td.calls.length, 1, "500 demandes en 8 h = 1 appel");
+  assert.ok(/start_date=\d{4}-\d{2}-\d{2}&end_date=\d{4}-\d{2}-\d{2}/.test(td.calls[0]));
+  c.advance(25 * 3600000); await m.earnings({ symbol: "NVDA" });
+  assert.strictEqual(td.calls.length, 2, "le lendemain, on redemande");
+  const route = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src", "routes", "market.js"), "utf8");
+  assert.ok(route.includes('router.get("/earnings", authenticate'));
 });
