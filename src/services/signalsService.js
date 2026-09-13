@@ -80,6 +80,13 @@ function judge(sig, candles, now) {
     const stopHit = side > 0 ? lo <= sig.stop : hi >= sig.stop;
     const t1Hit = side > 0 ? hi >= sig.target1 : lo <= sig.target1;
     const t2Hit = side > 0 ? hi >= sig.target2 : lo <= sig.target2;
+    /* BACKEND_11 — une SEULE bougie qui touche le stop ET l'objectif ne dit pas
+       lequel est venu en premier. L'ancienne version tranchait « stop » par
+       prudence : sur des bougies d'une heure et des niveaux à 0,5 % / 0,75 %,
+       cela donnait 41 % de stops et 0 % d'objectifs (constat Simon 13/09).
+       Un résultat qu'on ne peut pas établir n'est pas un échec : il est
+       INDÉTERMINÉ et sort du pourcentage. */
+    if (!t1 && stopHit && t1Hit) return { outcome: "undetermined", ret_pct: null, t2_reached: 0 };
     if (!t1 && stopHit) return { outcome: "stop", ret_pct: (sig.stop - sig.entry) / sig.entry * side * 100, t2_reached: 0 };
     if (t1Hit) t1 = true;
     if (t1 && t2Hit) { t2 = true; break; }
@@ -125,11 +132,14 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
       const [symbol, exchange] = k.split("|");
       let candles;
       try {
+        /* BACKEND_11 — TOUJOURS 15 min : une bougie d'une heure est plus large
+           que la distance entre l'entrée et ses niveaux, elle rend le verdict
+           impossible. On remonte simplement plus loin en nombre de bougies
+           (1 200 max = plus de 30 séances US de 26 bougies). */
         const oldest = Math.min(...list.map(p => p.emitted_at));
         const spanMin = (now() - oldest) / 60000;
-        const interval = spanMin <= 30 * 60 ? "15min" : "1h";
-        const need = Math.min(1200, Math.max(60, Math.ceil(spanMin / (interval === "15min" ? 15 : 60)) + 20));
-        const data = await market.series({ symbol, interval, outputsize: need, exchange });
+        const need = Math.min(1200, Math.max(120, Math.ceil(spanMin / 15) + 30));
+        const data = await market.series({ symbol, interval: "15min", outputsize: need, exchange });
         candles = Array.isArray(data.values) ? data.values : [];
       } catch (e) { log.warn("signals: série indisponible pour la mesure", { symbol, reason: e.message }); continue; }
       const upd = db().prepare("UPDATE signals SET outcome = ?, ret_pct = ?, t2_reached = ?, resolved_at = ? WHERE id = ?");
@@ -147,12 +157,14 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
     const rows = d.prepare("SELECT profile, stars, item_id, symbol, outcome, ret_pct, t2_reached FROM signals WHERE emitted_at >= ? AND outcome IS NOT NULL").all(since);
     const pendingCount = d.prepare("SELECT COUNT(*) AS n FROM signals WHERE emitted_at >= ? AND outcome IS NULL").get(since).n;
     const mine = userId ? d.prepare("SELECT COUNT(*) AS n FROM signals WHERE user_id = ? AND emitted_at >= ?").get(userId, since).n : null;
-    const agg = list => {
-      const n = list.length; if (!n) return { count: 0 };
+    const agg = all => {
+      const undet = all.filter(r => r.outcome === "undetermined").length;
+      const list = all.filter(r => r.outcome !== "undetermined");
+      const n = list.length; if (!n) return { count: 0, undetermined: undet };
       const t1 = list.filter(r => r.outcome === "target1").length, st = list.filter(r => r.outcome === "stop").length, ex = n - t1 - st;
       const t2 = list.filter(r => r.t2_reached).length;
       const avg = list.reduce((s, r) => s + (r.ret_pct || 0), 0) / n;
-      return { count: n, target1Pct: Math.round(t1 / n * 1000) / 10, stopPct: Math.round(st / n * 1000) / 10, expiredPct: Math.round(ex / n * 1000) / 10, target2Pct: Math.round(t2 / n * 1000) / 10, avgReturnPct: Math.round(avg * 100) / 100 };
+      return { count: n, undetermined: undet, target1Pct: Math.round(t1 / n * 1000) / 10, stopPct: Math.round(st / n * 1000) / 10, expiredPct: Math.round(ex / n * 1000) / 10, target2Pct: Math.round(t2 / n * 1000) / 10, avgReturnPct: Math.round(avg * 100) / 100 };
     };
     const group = key => { const m = new Map(); for (const r of rows) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return [...m.entries()].map(([k, l]) => ({ key: k, ...agg(l) })); };
     const overall = agg(rows);
@@ -165,13 +177,28 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
     };
   }
 
+  /* BACKEND_11 — les verdicts rendus avant ce correctif ont été établis sur
+     des bougies d'une heure : ils sont remis en attente pour être rejugés
+     proprement en 15 min. Une seule fois, marquée en base. */
+  function rejudgeLegacy() {
+    const d = db();
+    d.exec(`CREATE TABLE IF NOT EXISTS signals_meta (key TEXT PRIMARY KEY, value TEXT)`);
+    const done = d.prepare("SELECT value FROM signals_meta WHERE key = 'rejudge_b11'").get();
+    if (done) return { reset: 0, alreadyDone: true };
+    const r = d.prepare("UPDATE signals SET outcome = NULL, ret_pct = NULL, t2_reached = 0, resolved_at = NULL WHERE outcome IS NOT NULL").run();
+    d.prepare("INSERT OR REPLACE INTO signals_meta (key, value) VALUES ('rejudge_b11', ?)").run(String(now()));
+    log.info && log.info("signals: verdicts remis en attente pour être rejugés en 15 min", { reset: r.changes });
+    return { reset: r.changes, alreadyDone: false };
+  }
+
   function schedule(intervalMs = 15 * 60000) {
+    try { rejudgeLegacy(); } catch (e) { log.warn("signals: remise à zéro impossible", { reason: e.message }); }
     const t = setInterval(() => { resolvePending().catch(e => log.warn("signals: résolution en échec", { reason: e.message })); }, intervalMs);
     if (t.unref) t.unref();
     return t;
   }
 
-  return { record, resolvePending, stats, schedule, judge, candleEpoch, MIN_SIGNALS_FOR_STATS };
+  return { record, resolvePending, stats, schedule, rejudgeLegacy, judge, candleEpoch, MIN_SIGNALS_FOR_STATS };
 }
 
 module.exports = { createSignals, judge, candleEpoch, ensureSchema, MIN_SIGNALS_FOR_STATS };

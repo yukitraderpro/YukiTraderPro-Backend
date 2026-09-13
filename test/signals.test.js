@@ -20,8 +20,9 @@ test("judge — achat : objectif 1 touché avant le stop → target1 ; stop d'ab
   const now = T0 + 3 * 3600000;
   assert.deepStrictEqual(judge(BUY, [c("10:15", 100, 100.8, 99.9, 100.6)], now), { outcome: "target1", ret_pct: 0.75, t2_reached: 0 });
   assert.deepStrictEqual(judge(BUY, [c("10:15", 100, 100.3, 99.4, 99.6)], now), { outcome: "stop", ret_pct: -0.5, t2_reached: 0 });
+  /* BACKEND_11 : « le stop l'emporte » biaisait la mesure (voir le test dédié plus bas) — c'est désormais indéterminé. */
   const j = judge(BUY, [c("10:15", 100, 100.9, 99.4, 99.6)], now);
-  assert.strictEqual(j.outcome, "stop", "une bougie qui touche les deux : le stop l'emporte (prudence)");
+  assert.strictEqual(j.outcome, "undetermined", "une bougie qui touche les deux ne dit pas lequel est venu en premier");
   const flat = [c("10:15", 100, 100.2, 99.8, 100.1), c("11:00", 100.1, 100.3, 99.9, 100.2), c("11:45", 100.2, 100.4, 100, 100.3), c("12:00", 100.3, 100.4, 100.1, 100.2)];
   const ex = judge(BUY, flat, now); assert.strictEqual(ex.outcome, "expired"); assert.ok(Math.abs(ex.ret_pct - 0.2) < 1e-9, "rendement du dernier cours : " + ex.ret_pct);
   assert.strictEqual(judge(BUY, [c("10:15", 100, 100.2, 99.8, 100.1)], T0 + 30 * 60000), null, "validité pas écoulée : on attend");
@@ -69,4 +70,48 @@ test("service — sans clé serveur, rien n'est résolu ; sous 20 signaux, « en
   assert.deepStrictEqual(await s.resolvePending(), { resolved: 0, pending: 1 });
   const st = s.stats({ days: 30 });
   assert.strictEqual(st.enough, false); assert.strictEqual(st.pending, 1); assert.strictEqual(st.overall.count, 0);
+});
+
+test("BACKEND_11 — une bougie qui touche stop ET objectif est INDÉTERMINÉE, pas un stop (constat Simon 13/09 : 41 % de stops, 0 % d'objectifs sur bougies 1 h)", () => {
+  const now = T0 + 7 * 3600000;
+  const both = [c("10:15", 100, 100.9, 99.4, 100.2)];
+  assert.deepStrictEqual(judge(BUY, both, now), { outcome: "undetermined", ret_pct: null, t2_reached: 0 });
+  assert.strictEqual(judge(BUY, [c("10:15", 100, 100.8, 99.9, 100.6)], now).outcome, "target1", "objectif seul : inchangé");
+  assert.strictEqual(judge(BUY, [c("10:15", 100, 100.3, 99.4, 99.5)], now).outcome, "stop", "stop seul : inchangé");
+  const SELL = { ...BUY, side: "SELL", stop: 100.5, target1: 99.25, target2: 98.75 };
+  assert.strictEqual(judge(SELL, [c("10:15", 100, 100.6, 99.2, 99.8)], now).outcome, "undetermined", "vente : même règle");
+});
+
+test("BACKEND_11 — les indéterminés sortent des pourcentages et sont comptés à part ; la mesure demande toujours des bougies de 15 min", async () => {
+  db.open(":memory:");
+  let now = T0 + 5 * 3600000;
+  const asked = [];
+  const market = { configured: () => true, series: async (p) => { asked.push(p); return { values: [c("10:15", 100, 100.9, 99.4, 100.2)] }; } };
+  const s = createSignals({ getDb: () => db.get(), market, now: () => now });
+  const base = { itemId: "NVDA", symbol: "NVDA", profile: "day", signal: "ACHAT", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25, validMinutes: 120, stars: 3, marketKind: "us" };
+  for (let i = 0; i < 5; i++) s.record("u1", { ...base, emittedAt: T0 + i * 60000 });
+  await s.resolvePending();
+  assert.strictEqual(asked[0].interval, "15min", "jamais 1 h : une bougie d'une heure est plus large que la distance aux niveaux");
+  assert.ok(asked[0].outputsize >= 120, "on remonte en nombre de bougies : " + asked[0].outputsize);
+  const st = s.stats({ days: 30 });
+  assert.strictEqual(st.overall.count, 0, "aucun résultat exploitable");
+  assert.strictEqual(st.overall.undetermined, 5, "les cinq sont comptés à part");
+  assert.strictEqual(st.enough, false, "et rien n'est publié");
+});
+
+test("BACKEND_11 — les verdicts rendus avant le correctif sont remis en attente, une seule fois", async () => {
+  db.open(":memory:");
+  let now = T0 + 5 * 3600000;
+  const market = { configured: () => true, series: async () => ({ values: [c("10:15", 100, 100.8, 99.9, 100.6)] }) };
+  const s = createSignals({ getDb: () => db.get(), market, now: () => now });
+  const base = { itemId: "NVDA", symbol: "NVDA", profile: "day", signal: "ACHAT", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25, validMinutes: 120, marketKind: "us" };
+  for (let i = 0; i < 3; i++) s.record("u1", { ...base, emittedAt: T0 + i * 60000 });
+  await s.resolvePending();
+  assert.strictEqual(s.stats({ days: 30 }).overall.count, 3);
+  assert.deepStrictEqual(s.rejudgeLegacy(), { reset: 3, alreadyDone: false });
+  assert.strictEqual(s.stats({ days: 30 }).overall.count, 0, "remis en attente");
+  assert.strictEqual(s.stats({ days: 30 }).pending, 3);
+  assert.deepStrictEqual(s.rejudgeLegacy(), { reset: 0, alreadyDone: true }, "jamais deux fois");
+  await s.resolvePending();
+  assert.strictEqual(s.stats({ days: 30 }).overall.count, 3, "rejugés proprement");
 });
