@@ -30,5 +30,16 @@ router.get("/stats", authenticate, async ctx => {
   ctx.res.json(200, signals.stats({ days, userId: ctx.userId }));
 });
 
+/* BACKEND_12 — vérité terrain du suivi + vue brute pour l'administrateur. */
+router.post("/observed", authenticate, async ctx => {
+  try { ctx.res.json(200, { ok: true, ...signals.observe(ctx.userId, ctx.body || {}) }); }
+  catch (e) { throw new HttpError(400, "Observation invalide : " + e.message); }
+});
+router.get("/recent", authenticate, async ctx => {
+  const { requireAdmin } = require("./admin");
+  await requireAdmin(ctx, async () => {});
+  ctx.res.json(200, { signals: signals.recent(parseInt(ctx.query.limit, 10) || 60), reconciliation: signals.reconcile(30) });
+});
+
 module.exports = router;
 module.exports._signals = signals;

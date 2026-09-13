@@ -115,3 +115,37 @@ test("BACKEND_11 — les verdicts rendus avant le correctif sont remis en attent
   await s.resolvePending();
   assert.strictEqual(s.stats({ days: 30 }).overall.count, 3, "rejugés proprement");
 });
+
+test("BACKEND_12 — signal miroir : sens opposé, mêmes distances ; jugé en même temps que le signal", async () => {
+  const { mirrorOf } = require("../src/services/signalsService");
+  const m = mirrorOf({ side: "BUY", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25 });
+  assert.deepStrictEqual([m.side, m.stop, m.target1, m.target2], ["SELL", 100.5, 99.25, 98.75]);
+  db.open(":memory:");
+  let now = T0 + 5 * 3600000;
+  const s = createSignals({ getDb: () => db.get(), market: { configured: () => true, series: async () => ({ values: [c("10:15", 100, 100.3, 99.2, 99.4)] }) }, now: () => now });
+  s.record("u1", { itemId: "NVDA", symbol: "NVDA", profile: "day", signal: "ACHAT", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25, validMinutes: 120, emittedAt: T0, marketKind: "us" });
+  await s.resolvePending();
+  const row = s.recent(1)[0];
+  assert.strictEqual(row.outcome, "stop"); assert.strictEqual(row.mirror_outcome, "target1", "la baisse qui stoppe l'achat fait gagner la vente miroir");
+  const st = s.stats({ days: 30 });
+  assert.strictEqual(st.mirror.count, 1); assert.strictEqual(st.mirror.target1Pct, 100);
+});
+
+test("BACKEND_12 — observations du suivi (vérité terrain) rapprochées des verdicts ; la carte n'est validée qu'avec 10 rapprochements à 80 % d'accord", async () => {
+  db.open(":memory:");
+  let now = T0 + 5 * 3600000;
+  const s = createSignals({ getDb: () => db.get(), market: { configured: () => true, series: async () => ({ values: [c("10:15", 100, 100.8, 99.9, 100.6)] }) }, now: () => now });
+  for (let i = 0; i < 12; i++) {
+    s.record("u" + i, { itemId: "NVDA", symbol: "NVDA", profile: "day", signal: "ACHAT", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25, validMinutes: 120, emittedAt: T0 + i * 60000, marketKind: "us" });
+    assert.deepStrictEqual(s.observe("u" + i, { itemId: "NVDA", symbol: "NVDA", side: "BUY", entry: 100, observed: i < 11 ? "target1" : "stop", price: 100.8, openedAt: T0 + i * 60000 }), { recorded: true });
+  }
+  assert.deepStrictEqual(s.observe("u0", { symbol: "NVDA", side: "BUY", entry: 100, observed: "target1", openedAt: T0 }), { recorded: false }, "doublon ignoré");
+  assert.throws(() => s.observe("u0", { symbol: "NVDA", side: "BUY", entry: 100, observed: "maybe" }), /invalide/);
+  await s.resolvePending();
+  const rec = s.reconcile(30);
+  assert.strictEqual(rec.observations, 12); assert.strictEqual(rec.matched, 12); assert.strictEqual(rec.agree, 11, "11 « objectif » d'accord, 1 « stop » en désaccord");
+  assert.strictEqual(rec.disagreements[0].judged, "target1");
+  const st = s.stats({ days: 30 });
+  assert.strictEqual(st.validated, true, "12 rapprochements, 92 % d'accord");
+  assert.strictEqual(st.reconciliation.matched, 12);
+});

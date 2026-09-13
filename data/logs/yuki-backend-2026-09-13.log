@@ -109,3 +109,44 @@
 {"time":"2026-09-13T09:33:54.527Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
 {"time":"2026-09-13T09:33:54.530Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
 {"time":"2026-09-13T09:33:54.533Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:13.565Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:13.621Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:13.629Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:13.640Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:13.650Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:13.664Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:14.288Z","level":"info","message":"Base de données ouverte","dbPath":"/tmp/yuki-admin-9ispnD/test.sqlite"}
+{"time":"2026-09-13T15:20:14.290Z","level":"info","message":"ADMIN_EMAIL renseignée","adresses":["chef@exemple.fr","absent@exemple.fr"]}
+{"time":"2026-09-13T15:20:14.290Z","level":"info","message":"Compte promu administrateur au démarrage","email":"chef@exemple.fr","ancienRole":"free"}
+{"time":"2026-09-13T15:20:14.290Z","level":"info","message":"Administrateurs en base","nombre":2,"adresses":["chef@exemple.fr","deja@exemple.fr"]}
+{"time":"2026-09-13T15:20:14.290Z","level":"warn","message":"ADMIN_EMAIL désigne des comptes inexistants — crée-les dans l'application, puis redémarre le service","adresses":["absent@exemple.fr"]}
+{"time":"2026-09-13T15:20:14.291Z","level":"info","message":"ADMIN_EMAIL renseignée","adresses":["chef@exemple.fr","absent@exemple.fr"]}
+{"time":"2026-09-13T15:20:14.292Z","level":"info","message":"Administrateurs en base","nombre":2,"adresses":["chef@exemple.fr","deja@exemple.fr"]}
+{"time":"2026-09-13T15:20:14.292Z","level":"warn","message":"ADMIN_EMAIL désigne des comptes inexistants — crée-les dans l'application, puis redémarre le service","adresses":["absent@exemple.fr"]}
+{"time":"2026-09-13T15:20:14.292Z","level":"warn","message":"ADMIN_EMAIL non renseignée — aucune promotion automatique. Pour désigner un administrateur, ajoute cette variable dans l'environnement du service."}
+{"time":"2026-09-13T15:20:14.292Z","level":"info","message":"Administrateurs en base","nombre":2,"adresses":["chef@exemple.fr","deja@exemple.fr"]}
+{"time":"2026-09-13T15:20:14.597Z","level":"info","message":"Sauvegarde effectuée","dest":"/tmp/yuki-backup-test-r4QiWe/backups/yuki-20260913-152014.sqlite"}
+{"time":"2026-09-13T15:20:14.598Z","level":"warn","message":"Sauvegarde ignorée : fichier de base de données introuvable","dbPath":"/tmp/yuki-backup-test-r4QiWe/inexistant.sqlite"}
+{"time":"2026-09-13T15:20:14.598Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-3.sqlite"}
+{"time":"2026-09-13T15:20:14.599Z","level":"info","message":"Ancienne sauvegarde supprimée (rétention)","file":"yuki-fake-4.sqlite"}
+{"time":"2026-09-13T15:20:14.746Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:14.764Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:14.815Z","level":"info","message":"Base de données ouverte","dbPath":"/tmp/yuki-ondes-2kdDol/test.sqlite"}
+{"time":"2026-09-13T15:20:14.886Z","level":"info","message":"[ondes] co-mouvement recalculé","symboles":120,"echecs":0,"lignes":230}
+{"time":"2026-09-13T15:20:15.340Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:16.015Z","level":"info","message":"Achat déjà acquitté auprès de Google Play","status":400}
+{"time":"2026-09-13T15:20:16.016Z","level":"info","message":"Achat déjà acquitté auprès de Google Play","status":409}
+{"time":"2026-09-13T15:20:16.018Z","level":"warn","message":"Acquittement Google Play échoué","status":500}
+{"time":"2026-09-13T15:20:16.263Z","level":"warn","message":"Échec envoi FCM","status":404,"response":{"error":{"message":"Requested entity was not found."}}}
+{"time":"2026-09-13T15:20:17.027Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:17.306Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_block"}
+{"time":"2026-09-13T15:20:17.307Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_iso"}
+{"time":"2026-09-13T15:20:17.307Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_login"}
+{"time":"2026-09-13T15:20:17.307Z","level":"warn","message":"[rateLimit] Seuil atteint","limiter":"t_window"}
+{"time":"2026-09-13T15:20:17.407Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:17.792Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:17.808Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:17.811Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:17.816Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:17.820Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}
+{"time":"2026-09-13T15:20:17.823Z","level":"info","message":"Base de données ouverte","dbPath":":memory:"}

@@ -98,3 +98,4 @@ router.delete("/users/:id", authenticate, requireAdmin, async ctx => {
 });
 
 module.exports = router;
+module.exports.requireAdmin = requireAdmin;

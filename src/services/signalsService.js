@@ -41,9 +41,19 @@ function ensureSchema(db) {
     outcome TEXT,
     ret_pct REAL,
     t2_reached INTEGER NOT NULL DEFAULT 0,
+    mirror_outcome TEXT,
     UNIQUE(user_id, symbol, profile, side, emitted_minute)
   )`);
+  try { db.exec(`ALTER TABLE signals ADD COLUMN mirror_outcome TEXT`); } catch (_) {} /* base existante */
   db.exec(`CREATE INDEX IF NOT EXISTS idx_signals_pending ON signals(outcome, emitted_at)`);
+  /* BACKEND_12 — observations du suivi en direct : quand la position suivie
+     touche un niveau, le téléphone le dit au serveur. C'est la vérité
+     terrain contre laquelle la mesure a posteriori doit être vérifiée. */
+  db.exec(`CREATE TABLE IF NOT EXISTS signal_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, item_id TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL,
+    entry REAL NOT NULL, observed TEXT NOT NULL, price REAL, opened_at INTEGER, observed_at INTEGER NOT NULL,
+    UNIQUE(user_id, symbol, side, opened_at, observed)
+  )`);
 }
 
 /* Bougie Twelve Data « AAAA-MM-JJ HH:MM:SS » en heure de la place → epoch ms. */
@@ -96,6 +106,14 @@ function judge(sig, candles, now) {
   if (now >= end && lastClose !== null && coveredUntil >= end - 20 * 60000) return { outcome: "expired", ret_pct: (lastClose - sig.entry) / sig.entry * side * 100, t2_reached: 0 };
   return null;
 }
+/* BACKEND_12 — le signal MIROIR : même entrée, mêmes distances, sens opposé.
+   Si les miroirs touchent leur objectif alors que les signaux ne le touchent
+   jamais, le moteur est à contresens sur ce marché ; si les deux échouent,
+   c'est la géométrie qui est trop ambitieuse pour la volatilité du moment. */
+function mirrorOf(sig) {
+  const side = sig.side === "SELL" ? -1 : 1, e = sig.entry;
+  return { ...sig, side: side > 0 ? "SELL" : "BUY", stop: e - (sig.stop - e), target1: e - (sig.target1 - e), target2: e - (sig.target2 - e) };
+}
 
 function createSignals({ getDb, market, now = () => Date.now(), logger }) {
   const log = logger || { info() {}, warn() {} };
@@ -142,19 +160,55 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
         const data = await market.series({ symbol, interval: "15min", outputsize: need, exchange });
         candles = Array.isArray(data.values) ? data.values : [];
       } catch (e) { log.warn("signals: série indisponible pour la mesure", { symbol, reason: e.message }); continue; }
-      const upd = db().prepare("UPDATE signals SET outcome = ?, ret_pct = ?, t2_reached = ?, resolved_at = ? WHERE id = ?");
+      const upd = db().prepare("UPDATE signals SET outcome = ?, ret_pct = ?, t2_reached = ?, resolved_at = ?, mirror_outcome = ? WHERE id = ?");
       for (const sig of list) {
         const j = judge(sig, candles, now());
-        if (j) { upd.run(j.outcome, j.ret_pct, j.t2_reached, now(), sig.id); resolved++; }
+        if (j) { const m = judge(mirrorOf(sig), candles, now()); upd.run(j.outcome, j.ret_pct, j.t2_reached, now(), m ? m.outcome : null, sig.id); resolved++; }
       }
     }
     return { resolved, pending: pending.length - resolved };
   }
 
+  function observe(userId, o) {
+    const side = o.side === "SELL" ? "SELL" : "BUY", observed = ["target1", "target2", "stop"].includes(o.observed) ? o.observed : null;
+    if (!observed) throw new Error("observation invalide");
+    const symbol = String(o.symbol || "").toUpperCase().slice(0, 20); if (!/^[A-Z0-9.\-\/:_]{1,20}$/.test(symbol)) throw new Error("symbole invalide");
+    const r = db().prepare(`INSERT OR IGNORE INTO signal_observations (user_id, item_id, symbol, side, entry, observed, price, opened_at, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(userId, String(o.itemId || symbol).slice(0, 40), symbol, side, Number(o.entry) || 0, observed, Number.isFinite(+o.price) ? +o.price : null, Number.isFinite(+o.openedAt) ? +o.openedAt : null, now());
+    return { recorded: r.changes > 0 };
+  }
+
+  /* Rapprochement : pour chaque observation « objectif 1 touché » du suivi,
+     existe-t-il un signal mesuré du même actif, même sens, émis dans les 30
+     minutes autour de l'ouverture, et qu'a-t-il conclu ? Un désaccord
+     fréquent = la mesure est fausse, pas le moteur. */
+  function reconcile(days = 30) {
+    const since = now() - days * 86400000, d = db();
+    const obs = d.prepare("SELECT * FROM signal_observations WHERE observed_at >= ? AND observed IN ('target1','target2','stop')").all(since);
+    let matched = 0, agree = 0; const detail = [];
+    for (const o of obs) {
+      if (!o.opened_at) continue;
+      const sig = d.prepare("SELECT outcome FROM signals WHERE symbol = ? AND side = ? AND ABS(emitted_at - ?) <= 1800000 AND outcome IS NOT NULL ORDER BY ABS(emitted_at - ?) ASC LIMIT 1").get(o.symbol, o.side, o.opened_at, o.opened_at);
+      if (!sig) continue;
+      matched++;
+      const obsT = o.observed === "stop" ? "stop" : "target1";
+      const ok = sig.outcome === obsT || (obsT === "target1" && sig.outcome === "target1");
+      if (ok) agree++; else detail.push({ symbol: o.symbol, side: o.side, observed: o.observed, judged: sig.outcome });
+    }
+    return { observations: obs.length, matched, agree, disagreements: detail.slice(0, 20) };
+  }
+
+  function recent(limit = 60) {
+    return db().prepare("SELECT id, user_id, item_id, symbol, profile, origin, side, entry, stop, target1, target2, valid_minutes, stars, emitted_at, outcome, ret_pct, mirror_outcome FROM signals ORDER BY emitted_at DESC LIMIT ?").all(Math.max(1, Math.min(300, limit)));
+  }
+
   function stats({ days = 30, userId = null } = {}) {
     const since = now() - days * 86400000;
     const d = db();
-    const rows = d.prepare("SELECT profile, stars, item_id, symbol, outcome, ret_pct, t2_reached FROM signals WHERE emitted_at >= ? AND outcome IS NOT NULL").all(since);
+    const rows = d.prepare("SELECT profile, stars, item_id, symbol, outcome, ret_pct, t2_reached, mirror_outcome FROM signals WHERE emitted_at >= ? AND outcome IS NOT NULL").all(since);
+    const mirrorRows = rows.filter(r => r.mirror_outcome && r.mirror_outcome !== "undetermined");
+    const mirror = mirrorRows.length ? { count: mirrorRows.length, target1Pct: Math.round(mirrorRows.filter(r => r.mirror_outcome === "target1").length / mirrorRows.length * 1000) / 10, stopPct: Math.round(mirrorRows.filter(r => r.mirror_outcome === "stop").length / mirrorRows.length * 1000) / 10 } : { count: 0 };
+    const rec = reconcile(days);
     const pendingCount = d.prepare("SELECT COUNT(*) AS n FROM signals WHERE emitted_at >= ? AND outcome IS NULL").get(since).n;
     const mine = userId ? d.prepare("SELECT COUNT(*) AS n FROM signals WHERE user_id = ? AND emitted_at >= ?").get(userId, since).n : null;
     const agg = all => {
@@ -170,7 +224,11 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
     const overall = agg(rows);
     return {
       days, minSignals: MIN_SIGNALS_FOR_STATS, enough: overall.count >= MIN_SIGNALS_FOR_STATS, pending: pendingCount, mine,
-      overall,
+      overall, mirror, reconciliation: rec,
+      /* La carte publique ne s'affiche que si la mesure a été confrontée au
+         suivi réel et lui donne raison : au moins 10 rapprochements et 80 %
+         d'accord. Avant cela, seul l'administrateur la voit. */
+      validated: rec.matched >= 10 && rec.agree / rec.matched >= 0.8,
       byProfile: group(r => r.profile),
       byStars: group(r => String(r.stars)).sort((a, b) => a.key.localeCompare(b.key)),
       byInstrument: group(r => r.item_id).filter(x => x.count >= 5).sort((a, b) => b.count - a.count).slice(0, 12)
@@ -198,7 +256,7 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
     return t;
   }
 
-  return { record, resolvePending, stats, schedule, rejudgeLegacy, judge, candleEpoch, MIN_SIGNALS_FOR_STATS };
+  return { record, observe, reconcile, recent, resolvePending, stats, schedule, rejudgeLegacy, judge, mirrorOf, candleEpoch, MIN_SIGNALS_FOR_STATS };
 }
 
-module.exports = { createSignals, judge, candleEpoch, ensureSchema, MIN_SIGNALS_FOR_STATS };
+module.exports = { createSignals, judge, mirrorOf, candleEpoch, ensureSchema, MIN_SIGNALS_FOR_STATS };
