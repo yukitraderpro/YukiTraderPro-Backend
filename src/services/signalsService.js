@@ -45,6 +45,7 @@ function ensureSchema(db) {
     UNIQUE(user_id, symbol, profile, side, emitted_minute)
   )`);
   try { db.exec(`ALTER TABLE signals ADD COLUMN mirror_outcome TEXT`); } catch (_) {} /* base existante */
+  try { db.exec(`ALTER TABLE signals ADD COLUMN measure_error TEXT`); } catch (_) {} /* BACKEND_13 : pourquoi un signal reste en attente */
   db.exec(`CREATE INDEX IF NOT EXISTS idx_signals_pending ON signals(outcome, emitted_at)`);
   /* BACKEND_12 — observations du suivi en direct : quand la position suivie
      touche un niveau, le téléphone le dit au serveur. C'est la vérité
@@ -159,11 +160,19 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
         const need = Math.min(1200, Math.max(120, Math.ceil(spanMin / 15) + 30));
         const data = await market.series({ symbol, interval: "15min", outputsize: need, exchange });
         candles = Array.isArray(data.values) ? data.values : [];
-      } catch (e) { log.warn("signals: série indisponible pour la mesure", { symbol, reason: e.message }); continue; }
-      const upd = db().prepare("UPDATE signals SET outcome = ?, ret_pct = ?, t2_reached = ?, resolved_at = ?, mirror_outcome = ? WHERE id = ?");
+      } catch (e) {
+        log.warn("signals: série indisponible pour la mesure", { symbol, reason: e.message });
+        /* BACKEND_13 — la raison est écrite sur le signal : la vue admin la montre au lieu d'un « attente » muet. */
+        const err = db().prepare("UPDATE signals SET measure_error = ? WHERE id = ?");
+        for (const sig of list) err.run(String(e.message || e).slice(0, 160), sig.id);
+        continue;
+      }
+      const upd = db().prepare("UPDATE signals SET outcome = ?, ret_pct = ?, t2_reached = ?, resolved_at = ?, mirror_outcome = ?, measure_error = NULL WHERE id = ?");
+      const noteWait = db().prepare("UPDATE signals SET measure_error = ? WHERE id = ?");
       for (const sig of list) {
         const j = judge(sig, candles, now());
         if (j) { const m = judge(mirrorOf(sig), candles, now()); upd.run(j.outcome, j.ret_pct, j.t2_reached, now(), m ? m.outcome : null, sig.id); resolved++; }
+        else noteWait.run("fenêtre non couverte par les bougies reçues (" + candles.length + " bougies)", sig.id);
       }
     }
     return { resolved, pending: pending.length - resolved };
@@ -199,7 +208,7 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
   }
 
   function recent(limit = 60) {
-    return db().prepare("SELECT id, user_id, item_id, symbol, profile, origin, side, entry, stop, target1, target2, valid_minutes, stars, emitted_at, outcome, ret_pct, mirror_outcome FROM signals ORDER BY emitted_at DESC LIMIT ?").all(Math.max(1, Math.min(300, limit)));
+    return db().prepare("SELECT id, user_id, item_id, symbol, profile, origin, side, entry, stop, target1, target2, valid_minutes, stars, emitted_at, outcome, ret_pct, mirror_outcome, measure_error FROM signals ORDER BY emitted_at DESC LIMIT ?").all(Math.max(1, Math.min(300, limit)));
   }
 
   function stats({ days = 30, userId = null } = {}) {
@@ -249,14 +258,26 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
     return { reset: r.changes, alreadyDone: false };
   }
 
+  /* BACKEND_13 — les verdicts rendus avant le signal miroir n'en ont pas :
+     on remet UNE fois en attente ceux dont le miroir manque, pour qu'ils
+     soient rejugés avec (même série, même règle). */
+  function rejudgeForMirror() {
+    const d = db();
+    d.exec(`CREATE TABLE IF NOT EXISTS signals_meta (key TEXT PRIMARY KEY, value TEXT)`);
+    if (d.prepare("SELECT value FROM signals_meta WHERE key = 'rejudge_b13'").get()) return { reset: 0, alreadyDone: true };
+    const r = d.prepare("UPDATE signals SET outcome = NULL, ret_pct = NULL, t2_reached = 0, resolved_at = NULL WHERE outcome IS NOT NULL AND mirror_outcome IS NULL").run();
+    d.prepare("INSERT OR REPLACE INTO signals_meta (key, value) VALUES ('rejudge_b13', ?)").run(String(now()));
+    return { reset: r.changes, alreadyDone: false };
+  }
+
   function schedule(intervalMs = 15 * 60000) {
-    try { rejudgeLegacy(); } catch (e) { log.warn("signals: remise à zéro impossible", { reason: e.message }); }
+    try { rejudgeLegacy(); rejudgeForMirror(); } catch (e) { log.warn("signals: remise à zéro impossible", { reason: e.message }); }
     const t = setInterval(() => { resolvePending().catch(e => log.warn("signals: résolution en échec", { reason: e.message })); }, intervalMs);
     if (t.unref) t.unref();
     return t;
   }
 
-  return { record, observe, reconcile, recent, resolvePending, stats, schedule, rejudgeLegacy, judge, mirrorOf, candleEpoch, MIN_SIGNALS_FOR_STATS };
+  return { record, observe, reconcile, recent, resolvePending, stats, schedule, rejudgeLegacy, rejudgeForMirror, judge, mirrorOf, candleEpoch, MIN_SIGNALS_FOR_STATS };
 }
 
 module.exports = { createSignals, judge, mirrorOf, candleEpoch, ensureSchema, MIN_SIGNALS_FOR_STATS };

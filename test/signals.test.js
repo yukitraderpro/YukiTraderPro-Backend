@@ -149,3 +149,19 @@ test("BACKEND_12 — observations du suivi (vérité terrain) rapprochées des v
   assert.strictEqual(st.validated, true, "12 rapprochements, 92 % d'accord");
   assert.strictEqual(st.reconciliation.matched, 12);
 });
+
+test("BACKEND_13 — un signal qui reste en attente dit pourquoi (série indisponible, fenêtre non couverte) ; le miroir manquant déclenche un rejugement unique", async () => {
+  db.open(":memory:");
+  let now = T0 + 5 * 3600000;
+  let fail = true;
+  const s = createSignals({ getDb: () => db.get(), market: { configured: () => true, series: async () => { if (fail) throw new Error("Twelve Data HTTP 502"); return { values: [c("10:15", 100, 100.2, 99.9, 100.1)] }; } }, now: () => now });
+  s.record("u1", { itemId: "NVDA", symbol: "NVDA", profile: "day", signal: "ACHAT", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25, validMinutes: 120, emittedAt: T0, marketKind: "us" });
+  await s.resolvePending();
+  assert.strictEqual(s.recent(1)[0].measure_error, "Twelve Data HTTP 502", "la panne amont est écrite sur le signal");
+  fail = false; await s.resolvePending();
+  assert.ok(/fenêtre non couverte/.test(s.recent(1)[0].measure_error), "une seule bougie : la fenêtre de 2 h n'est pas couverte, et c'est dit");
+  const d = db.get();
+  d.prepare("UPDATE signals SET outcome = 'stop', ret_pct = -0.5, mirror_outcome = NULL").run();
+  assert.deepStrictEqual(s.rejudgeForMirror(), { reset: 1, alreadyDone: false });
+  assert.deepStrictEqual(s.rejudgeForMirror(), { reset: 0, alreadyDone: true });
+});
