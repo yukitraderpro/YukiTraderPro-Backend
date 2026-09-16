@@ -169,3 +169,13 @@ test("BACKEND_8 — dates de résultats : un appel par action et par jour, fenê
   const route = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src", "routes", "market.js"), "utf8");
   assert.ok(route.includes('router.get("/earnings", authenticate'));
 });
+
+test("BACKEND_14 — résultats passés : fenêtre start_date / end_date facultative, clé de cache distincte, fenêtre invalide refusée", async () => {
+  const td = fakeTwelve(), c = clock();
+  const m = createMarketData({ apiKey: "K", fetchImpl: td.fetchImpl, now: c.now });
+  await m.earnings({ symbol: "NVDA" });
+  await m.earnings({ symbol: "NVDA", start_date: "2026-03-01", end_date: "2026-09-01" });
+  assert.strictEqual(td.calls.length, 2, "deux fenêtres = deux appels");
+  assert.ok(/start_date=2026-03-01&end_date=2026-09-01/.test(td.calls[1]));
+  await assert.rejects(() => m.earnings({ symbol: "NVDA", start_date: "2026-09-01", end_date: "2026-03-01" }), e => e.status === 400);
+});

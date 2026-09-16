@@ -145,13 +145,18 @@ function createMarketData({ apiKey, fetchImpl, now = () => Date.now(), quotaStor
      action et par jour : la prochaine publication ne change pas d'une
      minute à l'autre. Fenêtre : d'aujourd'hui à +60 jours. */
   const EARNINGS_TTL_MS = 24 * 3600000;
-  async function earnings({ symbol, exchange }) {
+  /* BACKEND_14 — fenêtre facultative (start_date / end_date, AAAA-MM-JJ) : le
+     banc de recherche a besoin des résultats PASSÉS (dérive post-résultats). */
+  async function earnings({ symbol, exchange, start_date, end_date }) {
     if (!configured()) throw new MarketDataError(503, "Données de marché non configurées sur le serveur.", { code: "not_configured" });
     const sym = checkSymbol(symbol), exch = checkExchange(exchange);
-    const d0 = new Date(now()), d1 = new Date(now() + 60 * 86400000);
     const iso = d => d.toISOString().slice(0, 10);
-    const key = `earnings|${sym}|${exch}|${iso(d0)}`;
-    const r = await getCached(key, EARNINGS_TTL_MS, 1, () => "https://api.twelvedata.com/earnings?symbol=" + encodeURIComponent(sym) + (exch ? "&exchange=" + encodeURIComponent(exch) : "") + "&start_date=" + iso(d0) + "&end_date=" + iso(d1) + "&apikey=" + encodeURIComponent(apiKey));
+    const okDate = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+    const from = okDate(start_date) ? String(start_date) : iso(new Date(now()));
+    const to = okDate(end_date) ? String(end_date) : iso(new Date(now() + 60 * 86400000));
+    if (from > to) throw new MarketDataError(400, "Fenêtre de dates invalide.");
+    const key = `earnings|${sym}|${exch}|${from}|${to}`;
+    const r = await getCached(key, EARNINGS_TTL_MS, 1, () => "https://api.twelvedata.com/earnings?symbol=" + encodeURIComponent(sym) + (exch ? "&exchange=" + encodeURIComponent(exch) : "") + "&start_date=" + from + "&end_date=" + to + "&apikey=" + encodeURIComponent(apiKey));
     return { ...r.payload, meta_yuki: { fetchedAt: r.fetchedAt, ageMs: now() - r.fetchedAt, source: r.source, reason: r.reason || null } };
   }
 

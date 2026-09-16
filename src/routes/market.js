@@ -60,7 +60,7 @@ router.get("/earnings", authenticate, async ctx => {
   try {
     const access = getAccessState(ctx.userId);
     const q = await market.consume(ctx.userId, access);
-    const data = await market.earnings({ symbol: ctx.query.symbol, exchange: ctx.query.exchange });
+    const data = await market.earnings({ symbol: ctx.query.symbol, exchange: ctx.query.exchange, start_date: ctx.query.start_date, end_date: ctx.query.end_date });
     ctx.res.json(200, { ...data, quota_yuki: { tier: q.tier, remainingDay: q.remainingDay === Infinity ? null : q.remainingDay } });
   } catch (e) { throw translate(e); }
 });
