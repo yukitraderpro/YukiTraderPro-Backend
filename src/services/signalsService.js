@@ -19,7 +19,14 @@
 "use strict";
 
 const NY = "America/New_York";
-const MIN_SIGNALS_FOR_STATS = 20;
+/* BACKEND_15 — on compte des SITUATIONS, pas des signaux (constat Simon
+   18/09 : 79 signaux dont des dizaines identiques, même actif, même sens,
+   même séance, à quelques minutes d'écart — de quoi faire dire n'importe
+   quoi à un pourcentage). Une situation = un actif + un sens + une séance ;
+   ses signaux sont regroupés et comptent pour UN, avec le verdict majoritaire
+   (un objectif atteint l'emporte sur un stop dans la même situation : c'est
+   le premier signal de la situation qui aurait été suivi). */
+const MIN_SIGNALS_FOR_STATS = 20; /* désormais : minimum de SITUATIONS */
 
 function ensureSchema(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS signals (
@@ -114,6 +121,37 @@ function judge(sig, candles, now) {
 function mirrorOf(sig) {
   const side = sig.side === "SELL" ? -1 : 1, e = sig.entry;
   return { ...sig, side: side > 0 ? "SELL" : "BUY", stop: e - (sig.stop - e), target1: e - (sig.target1 - e), target2: e - (sig.target2 - e) };
+}
+
+/* Séance d'un instant : le jour de bourse à New York (les marchés continus
+   suivent la même découpe, ce qui suffit pour regrouper). */
+function sessionKey(ms) {
+  try { return new Intl.DateTimeFormat("en-CA", { timeZone: NY, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms)); }
+  catch (_) { return new Date(ms).toISOString().slice(0, 10); }
+}
+/* Un actif + un sens + une séance = une ligne. Verdict : objectif s'il a été
+   atteint au moins une fois, sinon stop, sinon expiré ; indéterminé seulement
+   si toute la situation l'est. Rendement et miroir : moyenne de la situation. */
+function groupSituations(rows) {
+  const by = new Map();
+  for (const r of rows) {
+    const k = r.item_id + "|" + r.side + "|" + r.profile + "|" + sessionKey(r.emitted_at);
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(r);
+  }
+  const rank = { target1: 3, stop: 2, expired: 1, undetermined: 0 };
+  return [...by.values()].map(list => {
+    const best = list.reduce((a, b) => (rank[b.outcome] || 0) > (rank[a.outcome] || 0) ? b : a);
+    const withRet = list.filter(x => Number.isFinite(x.ret_pct));
+    const mirrors = list.filter(x => x.mirror_outcome && x.mirror_outcome !== "undetermined");
+    const mBest = mirrors.length ? mirrors.reduce((a, b) => (rank[b.mirror_outcome] || 0) > (rank[a.mirror_outcome] || 0) ? b : a).mirror_outcome : null;
+    return {
+      profile: best.profile, stars: best.stars, item_id: best.item_id, symbol: best.symbol,
+      outcome: best.outcome, t2_reached: list.some(x => x.t2_reached) ? 1 : 0,
+      ret_pct: withRet.length ? withRet.reduce((a, b) => a + b.ret_pct, 0) / withRet.length : null,
+      mirror_outcome: mBest, signals: list.length
+    };
+  });
 }
 
 function createSignals({ getDb, market, now = () => Date.now(), logger }) {
@@ -214,11 +252,13 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
   function stats({ days = 30, userId = null } = {}) {
     const since = now() - days * 86400000;
     const d = db();
-    const rows = d.prepare("SELECT profile, stars, item_id, symbol, outcome, ret_pct, t2_reached, mirror_outcome FROM signals WHERE emitted_at >= ? AND outcome IS NOT NULL").all(since);
+    const raw = d.prepare("SELECT profile, stars, item_id, symbol, side, outcome, ret_pct, t2_reached, mirror_outcome, emitted_at FROM signals WHERE emitted_at >= ? AND outcome IS NOT NULL ORDER BY emitted_at ASC").all(since);
+    const rows = groupSituations(raw);
     const mirrorRows = rows.filter(r => r.mirror_outcome && r.mirror_outcome !== "undetermined");
     const mirror = mirrorRows.length ? { count: mirrorRows.length, target1Pct: Math.round(mirrorRows.filter(r => r.mirror_outcome === "target1").length / mirrorRows.length * 1000) / 10, stopPct: Math.round(mirrorRows.filter(r => r.mirror_outcome === "stop").length / mirrorRows.length * 1000) / 10 } : { count: 0 };
     const rec = reconcile(days);
     const pendingCount = d.prepare("SELECT COUNT(*) AS n FROM signals WHERE emitted_at >= ? AND outcome IS NULL").get(since).n;
+    const rawCount = raw.length;
     const mine = userId ? d.prepare("SELECT COUNT(*) AS n FROM signals WHERE user_id = ? AND emitted_at >= ?").get(userId, since).n : null;
     const agg = all => {
       const undet = all.filter(r => r.outcome === "undetermined").length;
@@ -233,6 +273,7 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
     const overall = agg(rows);
     return {
       days, minSignals: MIN_SIGNALS_FOR_STATS, enough: overall.count >= MIN_SIGNALS_FOR_STATS, pending: pendingCount, mine,
+      rawSignals: rawCount, situations: rows.length,
       overall, mirror, reconciliation: rec,
       /* La carte publique ne s'affiche que si la mesure a été confrontée au
          suivi réel et lui donne raison : au moins 10 rapprochements et 80 %
@@ -280,4 +321,4 @@ function createSignals({ getDb, market, now = () => Date.now(), logger }) {
   return { record, observe, reconcile, recent, resolvePending, stats, schedule, rejudgeLegacy, rejudgeForMirror, judge, mirrorOf, candleEpoch, MIN_SIGNALS_FOR_STATS };
 }
 
-module.exports = { createSignals, judge, mirrorOf, candleEpoch, ensureSchema, MIN_SIGNALS_FOR_STATS };
+module.exports = { createSignals, judge, mirrorOf, groupSituations, sessionKey, candleEpoch, ensureSchema, MIN_SIGNALS_FOR_STATS };

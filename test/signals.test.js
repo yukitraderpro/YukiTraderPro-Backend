@@ -53,11 +53,11 @@ test("service — consigner (doublon ignoré), résoudre avec une série serveur
   const r = await s.resolvePending();
   assert.strictEqual(r.resolved, 26); assert.strictEqual(r.pending, 0);
   const st = s.stats({ days: 30, userId: "u1" });
-  assert.strictEqual(st.overall.count, 26); assert.strictEqual(st.enough, true); assert.strictEqual(st.minSignals, MIN_SIGNALS_FOR_STATS);
-  assert.strictEqual(st.overall.target1Pct, 100, "toutes ont touché l'objectif 1");
+  /* BACKEND_15 : 26 signaux, deux SITUATIONS (NVDA et SMH, même sens, même séance) */
+  assert.strictEqual(st.rawSignals, 26); assert.strictEqual(st.situations, 2); assert.strictEqual(st.overall.count, 2);
+  assert.strictEqual(st.enough, false, "deux situations ne suffisent pas : il en faut 20"); assert.strictEqual(st.minSignals, MIN_SIGNALS_FOR_STATS);
+  assert.strictEqual(st.overall.target1Pct, 100, "les deux situations ont touché l'objectif 1");
   assert.strictEqual(st.byProfile[0].key, "day");
-  assert.ok(st.byStars.length === 3, "détail par étoiles");
-  assert.ok(st.byInstrument.find(x => x.key === "SMH").count === 25, "détail par instrument (≥ 5 signaux)");
   assert.strictEqual(st.mine, 6, "les signaux de l'utilisateur : 1 NVDA + 5 SMH");
   assert.strictEqual(st.pending, 0);
 });
@@ -95,7 +95,8 @@ test("BACKEND_11 — les indéterminés sortent des pourcentages et sont compté
   assert.ok(asked[0].outputsize >= 120, "on remonte en nombre de bougies : " + asked[0].outputsize);
   const st = s.stats({ days: 30 });
   assert.strictEqual(st.overall.count, 0, "aucun résultat exploitable");
-  assert.strictEqual(st.overall.undetermined, 5, "les cinq sont comptés à part");
+  assert.strictEqual(st.overall.undetermined, 1, "les cinq signaux ne font qu'une situation, indéterminée (BACKEND_15)");
+  assert.strictEqual(st.rawSignals, 5);
   assert.strictEqual(st.enough, false, "et rien n'est publié");
 });
 
@@ -107,13 +108,14 @@ test("BACKEND_11 — les verdicts rendus avant le correctif sont remis en attent
   const base = { itemId: "NVDA", symbol: "NVDA", profile: "day", signal: "ACHAT", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25, validMinutes: 120, marketKind: "us" };
   for (let i = 0; i < 3; i++) s.record("u1", { ...base, emittedAt: T0 + i * 60000 });
   await s.resolvePending();
-  assert.strictEqual(s.stats({ days: 30 }).overall.count, 3);
+  assert.strictEqual(s.stats({ days: 30 }).overall.count, 1, "trois signaux = une situation (BACKEND_15)");
+  assert.strictEqual(s.stats({ days: 30 }).rawSignals, 3);
   assert.deepStrictEqual(s.rejudgeLegacy(), { reset: 3, alreadyDone: false });
   assert.strictEqual(s.stats({ days: 30 }).overall.count, 0, "remis en attente");
   assert.strictEqual(s.stats({ days: 30 }).pending, 3);
   assert.deepStrictEqual(s.rejudgeLegacy(), { reset: 0, alreadyDone: true }, "jamais deux fois");
   await s.resolvePending();
-  assert.strictEqual(s.stats({ days: 30 }).overall.count, 3, "rejugés proprement");
+  assert.strictEqual(s.stats({ days: 30 }).overall.count, 1, "rejugés proprement");
 });
 
 test("BACKEND_12 — signal miroir : sens opposé, mêmes distances ; jugé en même temps que le signal", async () => {
@@ -164,4 +166,38 @@ test("BACKEND_13 — un signal qui reste en attente dit pourquoi (série indispo
   d.prepare("UPDATE signals SET outcome = 'stop', ret_pct = -0.5, mirror_outcome = NULL").run();
   assert.deepStrictEqual(s.rejudgeForMirror(), { reset: 1, alreadyDone: false });
   assert.deepStrictEqual(s.rejudgeForMirror(), { reset: 0, alreadyDone: true });
+});
+
+test("BACKEND_15 — on compte des SITUATIONS (actif + sens + séance), pas des signaux répétés (constat Simon 18/09)", () => {
+  const { groupSituations, sessionKey } = require("../src/services/signalsService");
+  const mk = (i, outcome, mirror, min) => ({ item_id: "XAUUSD", symbol: "XAUUSD", side: "SELL", profile: "day", stars: 3, outcome, mirror_outcome: mirror, ret_pct: -0.4, t2_reached: 0, emitted_at: T0 + min * 60000 });
+  /* 20 signaux identiques dans la même séance + 1 autre actif + 1 autre séance */
+  const rows = [];
+  for (let i = 0; i < 20; i++) rows.push(mk(i, i === 5 ? "target1" : "stop", "target1", i * 2));
+  rows.push({ ...mk(0, "stop", "stop", 3), item_id: "EURUSD", symbol: "EURUSD" });
+  rows.push(mk(0, "stop", "stop", 60 * 26)); /* lendemain */
+  const g = groupSituations(rows);
+  assert.strictEqual(g.length, 3, "trois situations, pas 22 signaux");
+  const xau = g.find(x => x.item_id === "XAUUSD" && x.signals === 20);
+  assert.strictEqual(xau.outcome, "target1", "un objectif atteint dans la situation l'emporte sur les stops");
+  assert.strictEqual(xau.mirror_outcome, "target1");
+  assert.ok(Math.abs(xau.ret_pct + 0.4) < 1e-9, "rendement moyen de la situation");
+  assert.notStrictEqual(sessionKey(T0), sessionKey(T0 + 26 * 3600000), "deux séances distinctes");
+});
+
+test("BACKEND_15 — les statistiques publient le nombre de situations et n'atteignent le seuil qu'avec 20 SITUATIONS", async () => {
+  db.open(":memory:");
+  let now = T0 + 5 * 3600000;
+  const s = createSignals({ getDb: () => db.get(), market: { configured: () => true, series: async () => ({ values: [c("10:15", 100, 100.8, 99.9, 100.6)] }) }, now: () => now });
+  const base = { itemId: "NVDA", symbol: "NVDA", profile: "day", signal: "ACHAT", entry: 100, stop: 99.5, target1: 100.75, target2: 101.25, validMinutes: 120, marketKind: "us" };
+  /* 40 envois espacés d'une minute ; la validité étant de 120 min, seuls ceux
+     dont la fenêtre est close sont mesurés — tous appartiennent à la même
+     situation (même actif, même sens, même séance). */
+  for (let i = 0; i < 40; i++) s.record("u1", { ...base, emittedAt: T0 + i * 60000 });
+  await s.resolvePending();
+  const st = s.stats({ days: 30 });
+  assert.ok(st.rawSignals >= 16, "plusieurs signaux mesurés : " + st.rawSignals);
+  assert.strictEqual(st.situations, 1);
+  assert.strictEqual(st.overall.count, 1, "une seule situation comptée");
+  assert.strictEqual(st.enough, false, "40 signaux identiques ne valent pas 20 situations");
 });
