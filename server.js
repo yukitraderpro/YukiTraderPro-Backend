@@ -35,6 +35,7 @@ const scanTimer = config.scheduledScan.enabled ? scheduledScan.schedule() : null
 const coMovementTimer = coMovementJob.schedule();
 const signalsTimer = require("./src/routes/signals")._signals.schedule(); // BACKEND_9 : mesure des signaux mûrs toutes les 15 min
 const challengeTimer = require("./src/routes/challenge")._challenge.schedule(); // BACKEND_10 : clôtures du défi du jour
+const feedbackTimer = require("./src/routes/feedback")._feedback.schedule(); // BACKEND_17 : courrier « ton essai » (si FEEDBACK_EMAIL_ENABLED)
 const csvPurgeTimer = setInterval(() => {
   try { const r = csvImportService.purgeExpired(); if (r.purged) logger.info("Purge CSV expirés", r); }
   catch (e) { logger.error("Erreur purge CSV", { error: e.message }); }
@@ -42,7 +43,7 @@ const csvPurgeTimer = setInterval(() => {
 
 function shutdown(signal) {
   logger.info("Arrêt du serveur", { signal });
-  clearInterval(backupTimer);
+  clearInterval(backupTimer); clearInterval(feedbackTimer);
   if (scanTimer) clearInterval(scanTimer);
   if (coMovementTimer) clearInterval(coMovementTimer);
   if (signalsTimer) clearInterval(signalsTimer);
