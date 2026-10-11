@@ -76,6 +76,33 @@ function createChallenge({ getDb, market, now = () => Date.now(), logger }) {
     return { resolved, pending: rows.length - resolved };
   }
 
+  /* BACKEND_16 — NIVEAUX DU DÉFI (demande Simon 11/10) : une bonne réponse
+     rapporte 1 point, 2 points à partir du troisième jour juste d'affilée.
+     Les paliers sont fixes et nommés (neige — Yuki, 雪). Calculé ici, sur
+     TOUT l'historique, pour être identique sur chaque appareil. Jamais
+     d'argent, jamais de « prédiction » : des points pour s'entraîner. */
+  const LEVELS = [
+    { key: "flocon", at: 0 }, { key: "premiere_neige", at: 3 }, { key: "poudreuse", at: 7 }, { key: "congere", at: 12 },
+    { key: "banquise", at: 20 }, { key: "glacier", at: 30 }, { key: "sommet", at: 45 }, { key: "neiges_eternelles", at: 65 }
+  ];
+  const BEYOND_STEP = 25; /* au-delà du dernier palier nommé : un niveau tous les 25 points, même nom */
+  function levelFor(points) {
+    let level = 1, start = 0, key = LEVELS[0].key;
+    for (let i = 0; i < LEVELS.length; i++) if (points >= LEVELS[i].at) { level = i + 1; start = LEVELS[i].at; key = LEVELS[i].key; }
+    if (level === LEVELS.length) { const extra = Math.floor((points - start) / BEYOND_STEP); level += extra; start += extra * BEYOND_STEP; }
+    const nextAt = level < LEVELS.length ? LEVELS[level].at : start + BEYOND_STEP;
+    return { level, key, start, nextAt, toNext: nextAt - points };
+  }
+  function progression(userId) {
+    const rows = db().prepare("SELECT user_result FROM challenges WHERE user_id = ? AND close_price IS NOT NULL ORDER BY day ASC").all(userId);
+    let points = 0, run = 0, lastGain = 0;
+    for (const r of rows) {
+      if (r.user_result === "win") { run++; const g = run >= 3 ? 2 : 1; points += g; lastGain = g; }
+      else { if (r.user_result === "loss") run = 0; lastGain = 0; }
+    }
+    return { points, lastGain, ...levelFor(points) };
+  }
+
   function stats(userId, n = 30) {
     const rows = db().prepare("SELECT * FROM challenges WHERE user_id = ? AND close_price IS NOT NULL ORDER BY day DESC LIMIT ?").all(userId, n);
     const played = rows.filter(r => r.user_result !== "pass");
@@ -84,6 +111,7 @@ function createChallenge({ getDb, market, now = () => Date.now(), logger }) {
     let streak = 0; for (const r of rows) { if (r.user_result === "win") streak++; else if (r.user_result === "loss") break; }
     const beat = rows.filter(r => r.user_result === "win" && r.yuki_result !== "win").length;
     return { resolved: rows.length, user: { played: played.length, wins }, yuki: { played: yukiPlayed.length, wins: yukiWins }, streak, beatYuki: beat,
+      progress: progression(userId),
       last: rows.slice(0, 10).map(r => ({ day: r.day, symbol: r.symbol, userCall: r.user_call, yukiCall: r.yuki_call, refPrice: r.ref_price, closePrice: r.close_price, userResult: r.user_result, yukiResult: r.yuki_result })) };
   }
 
@@ -96,6 +124,6 @@ function createChallenge({ getDb, market, now = () => Date.now(), logger }) {
 
   function schedule(intervalMs = 30 * 60000) { const t = setInterval(() => { resolvePending().catch(e => log.warn("challenge: résolution en échec", { reason: e.message })); }, intervalMs); if (t.unref) t.unref(); return t; }
 
-  return { record, resolvePending, stats, todayState, schedule, pickOfDay, result, CHALLENGE_POOL };
+  return { record, resolvePending, stats, todayState, schedule, pickOfDay, result, progression, levelFor, CHALLENGE_POOL };
 }
 module.exports = { createChallenge, pickOfDay, result, CHALLENGE_POOL };

@@ -44,3 +44,26 @@ test("EXÉCUTION — « je passe » ne compte ni victoire ni défaite ; Yuki qui
   await ch2.resolvePending();
   const st = ch2.stats("u1"); assert.strictEqual(st.user.played, 0); assert.strictEqual(st.yuki.played, 0); assert.strictEqual(st.resolved, 1);
 });
+
+test("BACKEND_16 — niveaux du défi : 1 point par bonne réponse, 2 à partir du 3e jour juste d'affilée ; paliers nommés ; calculé sur tout l'historique", async () => {
+  db.open(":memory:");
+  const s = createChallenge({ getDb: () => db.get(), market: { configured: () => true, series: async () => ({ values: [] }), price: async () => ({ price: 100 }) }, now: () => Date.UTC(2026, 9, 11, 20, 0) });
+  const { levelFor } = s;
+  assert.deepStrictEqual(levelFor(0), { level: 1, key: "flocon", start: 0, nextAt: 3, toNext: 3 });
+  assert.deepStrictEqual(levelFor(3), { level: 2, key: "premiere_neige", start: 3, nextAt: 7, toNext: 4 });
+  assert.strictEqual(levelFor(12).key, "congere"); assert.strictEqual(levelFor(64).level, 7);
+  assert.deepStrictEqual(levelFor(65), { level: 8, key: "neiges_eternelles", start: 65, nextAt: 90, toNext: 25 });
+  assert.deepStrictEqual(levelFor(91), { level: 9, key: "neiges_eternelles", start: 90, nextAt: 115, toNext: 24 }, "au-delà : un niveau tous les 25 points");
+  s.stats("u1"); /* force la création du schéma */
+  const d = db.get();
+  const ins = d.prepare("INSERT INTO challenges (user_id, day, item_id, symbol, user_call, yuki_call, ref_price, close_price, user_result, yuki_result, picked_at) VALUES ('u1', ?, 'NVDA', 'NVDA', 'up', 'up', 100, 101, ?, 'win', 0)");
+  /* win, win, win, loss, win, pass, win, win, win → 1+1+2 · 0 · 1 · (passe : série conservée) · 1+2+2 = 10 */
+  const seq = ["win", "win", "win", "loss", "win", "pass", "win", "win", "win"];
+  seq.forEach((r, i) => ins.run("2026-09-" + String(10 + i).padStart(2, "0"), r));
+  const p = s.progression("u1");
+  assert.strictEqual(p.points, 10, "série : 3e jour juste = 2 points ; une perte remet la série à zéro ; « je passe » n'interrompt pas");
+  assert.strictEqual(p.level, 3); assert.strictEqual(p.key, "poudreuse"); assert.strictEqual(p.toNext, 2); assert.strictEqual(p.lastGain, 2);
+  const st = s.stats("u1");
+  assert.strictEqual(st.progress.points, 10, "la progression voyage avec les statistiques");
+  assert.deepStrictEqual(s.progression("inconnu"), { points: 0, lastGain: 0, level: 1, key: "flocon", start: 0, nextAt: 3, toNext: 3 });
+});
