@@ -25,6 +25,7 @@ function buildApp() {
   app.use("/api/market", marketRoutes);
   app.use("/api/signals", signalsRoutes);
   app.use("/api/challenge", challengeRoutes);
+  app.use("/api/feedback", require("./routes/feedback")); // BACKEND_17 : retours d'essai
   app.use("/api", healthRoutes);
   return app;
 }

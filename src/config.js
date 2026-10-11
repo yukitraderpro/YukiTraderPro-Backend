@@ -92,6 +92,17 @@ const config = {
     apiKey: required("MARKET_DATA_KEY", "") || required("CONTEXT_DATA_KEY", "")
   },
 
+  /* BACKEND_17 — courrier « ton essai » aux comptes non abonnés : UN envoi par
+     compte, après FEEDBACK_EMAIL_AFTER_DAYS jours. Désactivé tant que
+     FEEDBACK_EMAIL_ENABLED n'est pas "true" (décision explicite de Simon). */
+  trialFeedback: {
+    emailEnabled: required("FEEDBACK_EMAIL_ENABLED", "false") === "true",
+    afterDays: parseInt(required("FEEDBACK_EMAIL_AFTER_DAYS", "8"), 10),
+    askInAppAfterDays: parseInt(required("FEEDBACK_INAPP_AFTER_DAYS", "7"), 10),
+    askSubscriberAfterDays: parseInt(required("FEEDBACK_SUBSCRIBER_AFTER_DAYS", "14"), 10),
+    playStoreUrl: required("PLAY_STORE_URL", "https://play.google.com/store/apps/details?id=com.yukitraderpro.app")
+  },
+
   scheduledScan: {
     enabled: required("SCHEDULED_SCAN_ENABLED", "false") === "true",
     intervalMinutes: parseInt(required("SCHEDULED_SCAN_INTERVAL_MINUTES", "15"), 10)
